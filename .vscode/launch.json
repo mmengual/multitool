@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:stopchatteringbitch}",
+      "name": "Debug StopChattering",
+      "target": "StopChattering",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug StopChattering"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:stopchatteringbitch}",
+      "name": "Release StopChattering",
+      "target": "StopChattering",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release StopChattering"
+    }
+  ]
+}
