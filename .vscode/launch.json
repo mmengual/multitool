@@ -4,21 +4,21 @@
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:stopchatteringbitch}",
-      "name": "Debug StopChattering",
-      "target": "StopChattering",
+      "cwd": "${workspaceFolder:multitool}",
+      "name": "Debug Multitool",
+      "target": "Multitool",
       "configuration": "debug",
-      "preLaunchTask": "swift: Build Debug StopChattering"
+      "preLaunchTask": "swift: Build Debug Multitool"
     },
     {
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:stopchatteringbitch}",
-      "name": "Release StopChattering",
-      "target": "StopChattering",
+      "cwd": "${workspaceFolder:multitool}",
+      "name": "Release Multitool",
+      "target": "Multitool",
       "configuration": "release",
-      "preLaunchTask": "swift: Build Release StopChattering"
+      "preLaunchTask": "swift: Build Release Multitool"
     }
   ]
 }

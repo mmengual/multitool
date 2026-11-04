@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="StopChattering"
-BUNDLE_ID="com.mmengual.stopchattering"
+APP_NAME="Multitool"
+BUNDLE_ID="com.mmengual.multitool"
 APP="$ROOT/$APP_NAME.app"
 
 swift build -c release
@@ -15,6 +15,8 @@ mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
 cp ".build/release/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
+# Orbe fonts (Outfit, Manrope, JetBrains Mono, SIL OFL), loaded through ATSApplicationFontsPath.
+cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +33,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>ATSApplicationFontsPath</key><string>Fonts</string>
 </dict>
 </plist>
 EOF
@@ -44,5 +47,5 @@ echo "Install:"
 echo "  mv \"$APP\" /Applications/"
 echo ""
 echo "Then open /Applications/$APP_NAME.app once, grant Accessibility,"
-echo "and (important) REMOVE any previous StopChattering entry from the"
+echo "and (important) REMOVE any previous Multitool entry from the"
 echo "Accessibility list before re-adding — stale cdhash entries block reprompts."

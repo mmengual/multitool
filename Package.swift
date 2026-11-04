@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "StopChattering",
+    name: "Multitool",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "StopChattering",
-            path: "Sources/StopChattering"
+            name: "Multitool",
+            path: "Sources/Multitool"
         )
     ]
 )
