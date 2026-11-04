@@ -52,7 +52,7 @@ fi
 [[ -x "$SPARKLE_BIN/sign_update" ]] || swift package resolve
 
 # --- Build, zip, sign -------------------------------------------------------------
-log "Building $VERSION…"
+log "Building ${VERSION}…"
 ./scripts/build-app.sh >/dev/null
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Multitool.app/Contents/Info.plist)"
 
@@ -71,7 +71,7 @@ if [[ -z "$NOTES" ]]; then
 fi
 
 # --- GitHub release ------------------------------------------------------------------
-log "Creating release $TAG…"
+log "Creating release ${TAG}…"
 gh release create "$TAG" "$ZIP" --repo "$REPO" --target "$(git rev-parse HEAD)" \
     --title "Multitool $VERSION" --notes "$NOTES" >/dev/null
 git fetch -q --tags origin
@@ -80,7 +80,7 @@ ASSET_ID="$(gh api "repos/$REPO/releases/tags/$TAG" --jq ".assets[] | select(.na
 ASSET_URL="https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
 
 # --- Appcast -------------------------------------------------------------------
-log "Updating the appcast on branch $BRANCH…"
+log "Updating the appcast on branch ${BRANCH}…"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/multitool-appcast.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 if git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1; then
