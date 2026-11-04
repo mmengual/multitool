@@ -69,6 +69,10 @@ enum AppInfo {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
+    static var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    }
+
     /// Multitool's folder in ~/Library/Application Support, created on demand
     /// and readable by the current user only.
     static func supportDirectory(_ sub: String) -> URL {

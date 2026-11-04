@@ -34,9 +34,13 @@ Le détail des modules prévus et l'ordre de réalisation sont dans
 
 ```sh
 ./scripts/build-app.sh          # produit Multitool.app à la racine
-mv Multitool.app /Applications/
+rm -rf /Applications/Multitool.app && mv Multitool.app /Applications/
 open /Applications/Multitool.app
 ```
+
+La version vient du fichier `VERSION`, le numéro de build du nombre de commits.
+L'app est signée avec le certificat Apple Development du poste : cette identité stable
+garde l'autorisation Accessibilité d'une version à l'autre.
 
 Au premier lancement, accorder la permission **Accessibilité** (Réglages Système →
 Confidentialité et sécurité → Accessibilité). Le partage de zone demande aussi
@@ -50,9 +54,43 @@ Options de développement, à passer au binaire
 (`Multitool.app/Contents/MacOS/Multitool`) :
 
 - `--settings <page>` ouvre les réglages sur une page (`general`, `permissions`,
-  `about`, `chatter`, `keyRemap`, `windowMover`, `regionShare`, `clipboard`) ;
+  `updates`, `about`, `chatter`, `keyRemap`, `windowMover`, `regionShare`, `clipboard`) ;
 - `--clipboard` ouvre l'historique du presse-papiers ;
-- `--popover` ouvre le popover de la barre des menus.
+- `--popover` ouvre le popover de la barre des menus ;
+- `--update-in-background` cherche une mise à jour sans fenêtre et l'installe à la fermeture.
+
+## Mises à jour
+
+Multitool se met à jour avec [Sparkle](https://sparkle-project.org), depuis ce dépôt :
+
+- l'appcast est `appcast.xml` sur la branche orpheline `releases`, lu via
+  `https://raw.githubusercontent.com/mmengual/multitool/releases/appcast.xml` ;
+- chaque version est une release GitHub `vX.Y.Z` dont l'asset est l'app zippée ;
+- chaque archive est signée par une clé EdDSA. La clé privée est dans le trousseau
+  (compte `multitool`), la clé publique dans `Resources/Sparkle/public-key.txt` et
+  l'Info.plist. À sauvegarder une fois, hors dépôt :
+  `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account multitool -x <fichier>`.
+
+Publier une version :
+
+```sh
+echo 0.3.0 > VERSION && git commit -am "Version 0.3.0" && git push
+scripts/release.sh                       # notes = commits depuis la dernière release
+scripts/release.sh --notes "- Ajout de…" # ou notes explicites
+```
+
+Le script refuse un arbre modifié ou non poussé, construit, zippe, signe, crée la
+release et ajoute la version en tête de l'appcast. Les copies installées la voient
+à leur prochaine vérification (quotidienne, ou Réglages → Mises à jour).
+
+Si le dépôt passe en privé, l'app a besoin d'un jeton de lecture : un token GitHub
+*fine-grained* limité à ce dépôt, permission Contents en lecture seule, rangé dans
+le trousseau. `build-app.sh` l'embarque alors dans l'Info.plist (`MTUpdateToken`),
+et l'app ne le présente qu'à `raw.githubusercontent.com` et `api.github.com` :
+
+```sh
+security add-generic-password -U -s multitool-update-token -a github -w
+```
 
 ## Interface : Orbe
 
@@ -79,6 +117,7 @@ Sources/Multitool/
   Core/            réglages, raccourcis globaux, autorisations, ouverture de session
   UI/              Orbe, fenêtre de réglages, popover, une page par module (Panes/)
   Clipboard/       surveillance, stockage, panneau d'historique
+  Updates/         Sparkle, accès au dépôt GitHub
   ChatterBlocker/  event tap clavier, statistiques, détection des jeux
   KeyRemap/        inversion ⌘ / ⌥, détection des claviers
   WindowMover/     déplacement et redimensionnement des fenêtres

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The panes of the settings window.
 enum SettingsPane: String, Hashable, CaseIterable {
-    case general, permissions, about
+    case general, permissions, updates, about
     case chatter, keyRemap
     case windowMover, regionShare
     case clipboard
@@ -34,6 +34,8 @@ enum SettingsCatalog {
                              summary: "Démarrage de l'app et vue d'ensemble des modules."),
             SettingsCategory(pane: .permissions, title: "Autorisations", symbol: "lock.shield",
                              summary: "Ce que macOS autorise Multitool à faire, et quels modules en dépendent."),
+            SettingsCategory(pane: .updates, title: "Mises à jour", symbol: "arrow.down.circle",
+                             summary: "Vérification et installation des nouvelles versions, depuis le dépôt GitHub."),
             SettingsCategory(pane: .about, title: "À propos", symbol: "info.circle",
                              summary: "Version, modules disponibles et à venir."),
         ]),
@@ -210,6 +212,7 @@ struct SettingsRootView: View {
         switch navigation.selection {
         case .general: GeneralPane(navigation: navigation)
         case .permissions: PermissionsPane()
+        case .updates: UpdatesPane()
         case .about: AboutPane()
         case .chatter: ChatterPane()
         case .keyRemap: KeyRemapPane()

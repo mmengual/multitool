@@ -34,13 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardDetector.shared.start()
         GameDetector.shared.start()
         ClipboardModule.shared.start()
+        UpdateController.shared.start()
 
         bindModules()
         handleDevArguments()
     }
 
     /// Development shortcuts: `--settings <pane>` opens the settings window
-    /// on a pane, `--clipboard` opens the history panel, `--popover` the menu bar popover.
+    /// on a pane, `--clipboard` opens the history panel, `--popover` the menu bar popover,
+    /// `--update-in-background` checks for an update and installs it on quit.
     private func handleDevArguments() {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--settings") {
@@ -48,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings(pane)
         }
         if args.contains("--clipboard") { ClipboardPanelController.shared.show() }
+        if args.contains("--update-in-background") { UpdateController.shared.checkInBackground() }
         if args.contains("--popover") {
             // The status item needs a run loop pass to get its place in the menu bar.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -146,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings
 
     @objc func openSettingsFromMenu(_ sender: Any?) { openSettings(nil) }
+    @objc func checkForUpdatesFromMenu(_ sender: Any?) { UpdateController.shared.checkForUpdates() }
 
     func openSettings(_ pane: SettingsPane?) {
         closePopover()
@@ -183,6 +187,9 @@ enum MainMenu {
         let settings = NSMenuItem(title: "Réglages…", action: #selector(AppDelegate.openSettingsFromMenu(_:)), keyEquivalent: ",")
         settings.target = target
         appMenu.addItem(settings)
+        let updates = NSMenuItem(title: "Rechercher les mises à jour…", action: #selector(AppDelegate.checkForUpdatesFromMenu(_:)), keyEquivalent: "")
+        updates.target = target
+        appMenu.addItem(updates)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quitter Multitool", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
