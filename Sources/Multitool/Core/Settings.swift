@@ -79,7 +79,8 @@ final class Settings: ObservableObject {
         didSet { defaults.set(clipboardExcludedApps, forKey: "clipboard.excludedApps") }
     }
 
-    static let thresholdRange: ClosedRange<Int> = 20...200
+    // Measured from the key's release: a bounce lands within a few tens of ms of it.
+    static let thresholdRange: ClosedRange<Int> = 10...100
     static let defaultExcludedApps = [
         "com.apple.keychainaccess",
         "com.apple.Passwords",
@@ -90,6 +91,7 @@ final class Settings: ObservableObject {
 
     private init() {
         Self.migrateFromStopChattering(into: defaults)
+        Self.migrateThresholdToKeyUpMeasure(into: defaults)
 
         if let v = defaults.object(forKey: "thresholdMs") as? Int {
             thresholdMs = min(max(v, Self.thresholdRange.lowerBound), Self.thresholdRange.upperBound)
@@ -141,6 +143,20 @@ final class Settings: ObservableObject {
                     "windowMoverModifiers", "moveButton", "resizeButton", "swapCmdOptionMode"]
         for key in keys where defaults.object(forKey: key) == nil {
             if let v = old.object(forKey: key) { defaults.set(v, forKey: key) }
+        }
+    }
+
+    /// StopChattering measured the threshold from one press to the next, Multitool
+    /// from the release to the next press. A value tuned for the old measure (often
+    /// 80-100 ms) now eats fast double letters, so it goes back to the default once.
+    private static func migrateThresholdToKeyUpMeasure(into defaults: UserDefaults) {
+        let doneKey = "thresholdMeasuredFromKeyUp"
+        guard !defaults.bool(forKey: doneKey) else { return }
+        defer { defaults.set(true, forKey: doneKey) }
+
+        if let v = defaults.object(forKey: "thresholdMs") as? Int, v > 50 {
+            defaults.set(30, forKey: "thresholdMs")
+            Log.app.info("threshold \(v) ms was tuned for the press-to-press measure: reset to 30 ms")
         }
     }
 }

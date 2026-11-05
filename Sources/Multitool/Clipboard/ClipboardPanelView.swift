@@ -88,8 +88,12 @@ struct ClipboardPanelView: View {
                          selected: item.id == model.selected?.id)
                 .id(item.id)
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) { model.selectedID = item.id; model.pick() }
-                .onTapGesture { model.selectedID = item.id }
+                // A single gesture: pairing onTapGesture(count: 2) with a single tap makes
+                // SwiftUI hold the single tap until the double-click delay runs out.
+                .onTapGesture {
+                    model.selectedID = item.id
+                    if NSApp.currentEvent?.clickCount == 2 { model.pick() }
+                }
                 .contextMenu {
                     Button("Coller") { model.selectedID = item.id; model.pick() }
                     Button("Coller en texte brut") { model.selectedID = item.id; model.pick(plainText: true) }
