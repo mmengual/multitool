@@ -3,6 +3,15 @@
   <channel>
     <title>Multitool</title>
     <item>
+      <title>Multitool 0.3.0</title>
+      <pubDate>Sun, 15 Nov 2026 22:04:35 GMT</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>Nouveau : moniteur Processus et ressources. État du poste, consommateurs par app (processeur, mémoire, disque, réseau, énergie), anomalies expliquées en clair, exécutables d&#x27;origine douteuse. L&#x27;icône de la barre des menus passe en orange en cas d&#x27;anomalie.</li><li>Lecture complète des processus système par un service en lecture seule, à autoriser une fois : moniteur → Activer la lecture complète, puis Réglages Système → Général → Ouverture et extensions.</li></ul>]]></description>
+      <enclosure url="https://api.github.com/repos/mmengual/multitool/releases/assets/752495092" type="application/octet-stream" sparkle:edSignature="vvmtTQ7BJMnrk/XbJF8XzhRKfy77y/ohZ5tTDThwHQzk2TIxK61qnt/83OKl375j1qv8e5KVjpH/VMeKA+VDBw==" length="2702094"/>
+    </item>
+    <item>
       <title>Multitool 0.2.2</title>
       <pubDate>Sun, 15 Nov 2026 21:07:08 GMT</pubDate>
       <sparkle:version>7</sparkle:version>
