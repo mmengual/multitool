@@ -43,7 +43,7 @@ enum SettingsCatalog {
             SettingsCategory(pane: .chatter, title: "Chatter Blocker", symbol: "keyboard",
                              summary: "Filtre les doubles frappes d'un switch mécanique défectueux."),
             SettingsCategory(pane: .keyRemap, title: "Inversion ⌘ / ⌥", symbol: "command",
-                             summary: "Échange Commande et Option, toujours ou seulement avec un clavier Logitech."),
+                             summary: "Échange Commande et Option sur les claviers de votre choix, par le réglage de macOS."),
         ]),
         SettingsCategoryGroup(title: "Fenêtres et écran", categories: [
             SettingsCategory(pane: .windowMover, title: "Window Mover", symbol: "macwindow",

@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var eventTap: EventTap?
     private var windowMover: WindowMover?
-    private var keyRemap: KeyRemap?
     private let popover = NSPopover()
     private var popoverMonitor: Any?
     private var permissionTimer: Timer?
@@ -19,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu.make(target: self)
         setUpStatusItem()
 
-        KeyboardDetector.shared.start()
+        KeyboardSwap.shared.start()
         GameDetector.shared.start()
         ClipboardModule.shared.start()
         UpdateController.shared.start()
@@ -31,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Accessibility
 
-    /// The keyboard and mouse modules need the Accessibility permission. Without
+    /// The chatter filter and Window Mover need the Accessibility permission. Without
     /// it, macOS shows its own prompt (and lists Multitool in the settings), and
     /// we retry every 2 s: the modules start as soon as the permission is granted,
     /// without relaunching. The clipboard history works in the meantime.
@@ -44,18 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let mover = WindowMover()
             if mover.start() { windowMover = mover }
         }
-        if keyRemap == nil {
-            let remap = KeyRemap()
-            if remap.start() { keyRemap = remap }
-        }
 
-        let ready = eventTap != nil && windowMover != nil && keyRemap != nil
+        let ready = eventTap != nil && windowMover != nil
         if ready {
             permissionTimer?.invalidate()
             permissionTimer = nil
             applyChatterState()
             applyWindowMoverState()
-            applyRemapState()
             Log.app.info("input modules started")
         } else if permissionTimer == nil {
             Log.app.info("accessibility missing: prompting and waiting")
@@ -113,12 +107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyWindowMoverState() } }
             .store(in: &cancellables)
-
-        settings.$swapCmdOptionMode
-            .combineLatest(KeyboardDetector.shared.$hasLogitechKeyboard)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in DispatchQueue.main.async { self?.applyRemapState() } }
-            .store(in: &cancellables)
     }
 
     // Published values are read after the change lands (hence the async hop above).
@@ -133,14 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyWindowMoverState() {
         Settings.shared.windowMoverEnabled ? windowMover?.enable() : windowMover?.disable()
-    }
-
-    private func applyRemapState() {
-        let mode = Settings.shared.swapCmdOptionMode
-        let hasLogi = KeyboardDetector.shared.hasLogitechKeyboard
-        let active = mode == .on || (mode == .auto && hasLogi)
-        Log.app.info("remap mode=\(String(describing: mode), privacy: .public) logi=\(hasLogi) -> active=\(active)")
-        active ? keyRemap?.enable() : keyRemap?.disable()
     }
 
     // MARK: - Status item and popover

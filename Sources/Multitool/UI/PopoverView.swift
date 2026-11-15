@@ -8,7 +8,7 @@ struct PopoverView: View {
     @ObservedObject private var chatter = ChatterDetector.shared
     @ObservedObject private var share = RegionShareController.shared
     @ObservedObject private var store = ClipboardStore.shared
-    @ObservedObject private var keyboard = KeyboardDetector.shared
+    @ObservedObject private var keyboards = KeyboardSwap.shared
     let openSettings: (SettingsPane?) -> Void
 
     var body: some View {
@@ -28,9 +28,11 @@ struct PopoverView: View {
                 OrbeFilet(inset: 0)
                 row(.windowMover, status: windowMoverStatus) { OrbeSwitch(isOn: $settings.windowMoverEnabled) }
                 OrbeFilet(inset: 0)
-                row(.keyRemap, status: remapStatus) {
-                    OrbeSegmented(selection: $settings.swapCmdOptionMode,
-                                  options: [(.off, "Non"), (.auto, "Auto"), (.on, "Oui")])
+                row(.keyRemap, status: keyboards.summary) {
+                    if let keyboard = keyboards.soleExternal {
+                        OrbeSwitch(isOn: Binding(get: { keyboard.swapped },
+                                                 set: { keyboards.setSwapped($0, for: keyboard) }))
+                    }
                 }
                 OrbeFilet(inset: 0)
                 row(.regionShare, status: RegionShareStatus.text(share)) {
@@ -127,13 +129,5 @@ struct PopoverView: View {
         if settings.windowMoverModifiers.contains(.shift) { keys += "⇧" }
         if settings.windowMoverModifiers.contains(.cmd) { keys += "⌘" }
         return "\(keys) et glisser"
-    }
-
-    private var remapStatus: String {
-        switch settings.swapCmdOptionMode {
-        case .off: return "Inactive"
-        case .on: return "Active"
-        case .auto: return keyboard.hasLogitechKeyboard ? "Active, Logitech branché" : "En attente d'un Logitech"
-        }
     }
 }

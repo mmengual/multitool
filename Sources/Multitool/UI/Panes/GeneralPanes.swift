@@ -4,6 +4,7 @@ import SwiftUI
 struct GeneralPane: View {
     @ObservedObject var navigation: SettingsNavigation
     @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var keyboards = KeyboardSwap.shared
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var launchError: String?
 
@@ -34,7 +35,7 @@ struct GeneralPane: View {
                 moduleRow(.chatter) { OrbeSwitch(isOn: $settings.enabled) }
                 OrbeFilet()
                 moduleRow(.keyRemap) {
-                    Text(remapState).orbe(.texteS, Orbe.texte2)
+                    Text(keyboards.summary).orbe(.texteS, Orbe.texte2)
                 }
                 OrbeFilet()
                 moduleRow(.windowMover) { OrbeSwitch(isOn: $settings.windowMoverEnabled) }
@@ -45,14 +46,6 @@ struct GeneralPane: View {
             }
         }
         .refreshEverySecond { launchAtLogin = LaunchAtLogin.isEnabled }
-    }
-
-    private var remapState: String {
-        switch settings.swapCmdOptionMode {
-        case .off: return "Désactivée"
-        case .auto: return "Automatique"
-        case .on: return "Toujours"
-        }
     }
 
     private func moduleRow<Trailing: View>(_ pane: SettingsPane,
@@ -78,7 +71,7 @@ struct PermissionsPane: View {
                 permissionRow(
                     title: "Accessibilité",
                     granted: accessibility,
-                    usedBy: "Chatter Blocker, Inversion ⌘ / ⌥, Window Mover, collage automatique du presse-papiers",
+                    usedBy: "Chatter Blocker, Window Mover, collage automatique du presse-papiers",
                     open: Permissions.openAccessibilitySettings
                 )
                 OrbeFilet()

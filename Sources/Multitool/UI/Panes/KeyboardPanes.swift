@@ -119,46 +119,41 @@ struct ChatterPane: View {
 }
 
 struct KeyRemapPane: View {
-    @ObservedObject private var settings = Settings.shared
-    @ObservedObject private var detector = KeyboardDetector.shared
+    @ObservedObject private var swap = KeyboardSwap.shared
 
     var body: some View {
         PaneForm {
-            OrbeSection(title: "Mode",
-                        note: "Les claviers pensés pour Windows placent Option là où un clavier Mac met Commande. En mode automatique, l'inversion ne s'applique que tant qu'un clavier Logitech est branché.") {
-                OrbeRow(title: "Inverser ⌘ et ⌥") {
-                    OrbeSegmented(selection: $settings.swapCmdOptionMode, options: [
-                        (.off, "Jamais"), (.auto, "Avec un Logitech"), (.on, "Toujours"),
-                    ])
-                }
-                OrbeFilet()
-                OrbeRow(title: "État") {
-                    OrbeBadge(ton: isActive ? .hausse : .neutre, text: status)
-                }
-            }
-
-            OrbeSection(title: "Claviers détectés") {
-                if detector.detectedVendorNames.isEmpty {
-                    OrbeRow(title: "Aucun")
+            OrbeSection(title: "Claviers branchés",
+                        note: "Les claviers pensés pour Windows placent Option là où un clavier Mac met Commande. L'interrupteur modifie le réglage Touches de modification de macOS pour ce clavier : macOS le garde et l'applique à chaque branchement, même quand Multitool est fermé. L'inversion a lieu avant les apps, donc aussi dans les champs de mot de passe et les jeux.") {
+                if swap.keyboards.isEmpty {
+                    OrbeRow(title: "Aucun clavier détecté")
                 } else {
-                    ForEach(Array(detector.detectedVendorNames.enumerated()), id: \.offset) { index, name in
+                    ForEach(Array(swap.keyboards.enumerated()), id: \.element.id) { index, keyboard in
                         if index > 0 { OrbeFilet() }
-                        OrbeRow(title: name, icon: "keyboard")
+                        OrbeRow(title: keyboard.name,
+                                detail: keyboard.builtIn ? "Clavier intégré"
+                                    : keyboard.isReceiver ? "Récepteur sans fil, partagé avec une souris" : nil,
+                                icon: "keyboard") {
+                            OrbeSwitch(isOn: Binding(get: { keyboard.swapped },
+                                                     set: { swap.setSwapped($0, for: keyboard) }))
+                        }
                     }
                 }
+                if let error = swap.lastError {
+                    OrbeFilet()
+                    OrbeRow(title: error) { OrbeBadge(ton: .alerte, text: "En attente") }
+                }
+            }
+
+            OrbeSection(title: "Réglage macOS") {
+                OrbeRow(title: "Touches de modification",
+                        detail: "Réglages Système → Clavier → Raccourcis clavier → Touches de modification") {
+                    Button("Ouvrir") { Permissions.openKeyboardSettings() }
+                        .buttonStyle(.orbe)
+                }
             }
         }
-    }
-
-    private var isActive: Bool {
-        settings.swapCmdOptionMode == .on || (settings.swapCmdOptionMode == .auto && detector.hasLogitechKeyboard)
-    }
-
-    private var status: String {
-        switch settings.swapCmdOptionMode {
-        case .off: return "Inactive"
-        case .on: return "Active"
-        case .auto: return detector.hasLogitechKeyboard ? "Active, clavier Logitech détecté" : "En attente d'un clavier Logitech"
-        }
+        .onAppear { swap.refresh() }
+        .refreshEverySecond { swap.refresh() }
     }
 }

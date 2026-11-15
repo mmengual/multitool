@@ -13,7 +13,7 @@ frappes d'un clavier défectueux. Elle a grossi, d'où le changement de nom.
 | Presse-papiers | en place | Historique de ce qui est copié (texte, images, fichiers), panneau de recherche au raccourci ⇧⌘V, collage direct, éléments épinglés. |
 | Chatter Blocker | en place | Filtre les doubles frappes d'un switch mécanique défectueux (seuil par touche, en ms). Se met en pause quand un jeu est au premier plan. |
 | Window Mover | en place | Déplace ou redimensionne n'importe quelle fenêtre en maintenant des modificateurs et en glissant à la souris. |
-| Inversion ⌘ / ⌥ | en place | Inverse Commande et Option, toujours ou seulement quand un clavier Logitech est branché. |
+| Inversion ⌘ / ⌥ | en place | Inverse Commande et Option clavier par clavier, en pilotant le réglage Touches de modification de macOS. |
 | Partage de zone | en place | Diffuse une zone de l'écran dans une fenêtre invisible que Teams, Zoom ou Meet peuvent partager. |
 | Processus et ressources | prévu | Carte des processus, de ce qui consomme, et des éléments lancés au démarrage. |
 | Barre des menus | prévu | Choisir quelles icônes restent visibles, les autres passent dans un menu secondaire. |
@@ -46,9 +46,9 @@ Au premier lancement, accorder la permission **Accessibilité** (Réglages Syst�
 Confidentialité et sécurité → Accessibilité). Le partage de zone demande aussi
 **Enregistrement de l'écran**. La page Autorisations des réglages montre l'état des deux.
 
-L'app est signée en ad hoc : chaque nouveau build change son empreinte, et macOS
-peut garder une ancienne entrée Accessibilité qui bloque la nouvelle demande.
-En cas de doute, supprimer l'entrée Multitool de la liste puis relancer.
+Sans ce certificat, le script signe en ad hoc : chaque build change alors d'empreinte,
+et macOS peut garder une ancienne entrée Accessibilité qui bloque la nouvelle demande.
+Dans ce cas, supprimer l'entrée Multitool de la liste puis relancer.
 
 Options de développement, à passer au binaire
 (`Multitool.app/Contents/MacOS/Multitool`) :
@@ -119,7 +119,7 @@ Sources/Multitool/
   Clipboard/       surveillance, stockage, panneau d'historique
   Updates/         Sparkle, accès au dépôt GitHub
   ChatterBlocker/  event tap clavier, statistiques, détection des jeux
-  KeyRemap/        inversion ⌘ / ⌥, détection des claviers
+  KeyRemap/        inversion ⌘ / ⌥ par le réglage macOS de chaque clavier
   WindowMover/     déplacement et redimensionnement des fenêtres
   RegionShare/     sélection de zone, capture ScreenCaptureKit, fenêtre de partage
 ```
@@ -132,4 +132,9 @@ Sources/Multitool/
   lisible par le seul compte de l'utilisateur.
 - Les événements clavier que Multitool envoie lui-même (le ⌘V du presse-papiers)
   portent une marque que les autres modules laissent passer (`SyntheticEvents`).
+- Inversion ⌘ / ⌥ : Multitool écrit le réglage que macOS range sous
+  `com.apple.keyboard.modifiermapping.<vendor>-<product>-0` (domaine global, hôte courant),
+  puis le pousse au clavier branché pour qu'il prenne effet tout de suite. macOS
+  le réapplique seul à chaque branchement. Pas d'interception : ça marche aussi dans
+  les champs de mot de passe et sans l'autorisation Accessibilité.
 - Logs : `log stream --predicate 'subsystem == "com.mmengual.multitool"'`.

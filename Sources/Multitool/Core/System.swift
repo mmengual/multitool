@@ -35,6 +35,10 @@ enum Permissions {
         open("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
+    static func openKeyboardSettings() {
+        open("x-apple.systempreferences:com.apple.Keyboard-Settings.extension")
+    }
+
     static func openScreenRecordingSettings() {
         open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
     }

@@ -7,12 +7,6 @@ enum MouseButton: Int, Equatable {
     case right = 2
 }
 
-enum SwapMode: Int, Equatable {
-    case off = 0
-    case auto = 1
-    case on = 2
-}
-
 /// Every persisted preference of the app, one `UserDefaults` key per property.
 final class Settings: ObservableObject {
     static let shared = Settings()
@@ -46,10 +40,6 @@ final class Settings: ObservableObject {
     }
 
     // MARK: Key remap
-
-    @Published var swapCmdOptionMode: SwapMode = .off {
-        didSet { defaults.set(swapCmdOptionMode.rawValue, forKey: "swapCmdOptionMode") }
-    }
 
     // MARK: Clipboard
 
@@ -106,8 +96,6 @@ final class Settings: ObservableObject {
            let b = MouseButton(rawValue: v) { moveButton = b }
         if let v = defaults.object(forKey: "resizeButton") as? Int,
            let b = MouseButton(rawValue: v) { resizeButton = b }
-        if let v = defaults.object(forKey: "swapCmdOptionMode") as? Int,
-           let m = SwapMode(rawValue: v) { swapCmdOptionMode = m }
 
         if let v = defaults.object(forKey: "clipboard.enabled") as? Bool { clipboardEnabled = v }
         if defaults.object(forKey: "clipboard.hotKey") != nil {
@@ -140,7 +128,7 @@ final class Settings: ObservableObject {
 
         guard let old = UserDefaults(suiteName: "com.mmengual.stopchattering") else { return }
         let keys = ["thresholdMs", "enabled", "pauseInGame", "windowMoverEnabled",
-                    "windowMoverModifiers", "moveButton", "resizeButton", "swapCmdOptionMode"]
+                    "windowMoverModifiers", "moveButton", "resizeButton"]
         for key in keys where defaults.object(forKey: key) == nil {
             if let v = old.object(forKey: key) { defaults.set(v, forKey: key) }
         }

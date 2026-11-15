@@ -9,7 +9,7 @@ risqué, et chaque section se complète au fur et à mesure.
 |---|---|---|---|
 | 0 | Socle modules | fait | Prérequis : le popover d'origine (Settings / Stats / Info) ne tenait pas quatre outils de plus. |
 | 1 | Clipboard | fait (v1) | APIs publiques et stables, aucune nouvelle permission, périmètre clair. |
-| 2 | Processus & ressources | à faire | Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
+| 2 | Processus & ressources | cadré | Diagnostic du poste et éléments de démarrage. Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
 | 3 | Menu Bar | à faire | Repose sur des contournements (macOS n'offre pas d'API pour gérer les icônes des autres apps). Fragile d'une version de macOS à l'autre. |
 | 4 | Screenshot | à faire | Le plus gros chantier, et le plus personnel. Réutilise la sélection de zone et ScreenCaptureKit déjà présents. |
 
@@ -65,33 +65,82 @@ Questions ouvertes :
 - Faut-il synchroniser l'historique entre plusieurs Mac ?
 - Snippets (textes types réutilisables) dans ce module ou plus tard ?
 
-## 2. Processus & ressources
+## 2. Processus & ressources : le poste de pilotage du Mac
 
-**Besoin** : savoir ce qui tourne, ce qui consomme, et ce qui se lance tout seul.
+**Besoin** : l'outil d'admin système du Mac, en version graphique. Voir tout ce qui
+tourne et tout ce qui se lance seul, savoir à qui ça appartient, le couper ou le
+rétablir, et trouver en quelques secondes ce qui ralentit le poste.
 
-Première version, en lecture seule :
-- Liste des processus regroupés par app (les « Helper » rattachés à l'app qui les
-  a lancés), avec CPU, mémoire et énergie.
-- Vue en arbre parent → enfants pour comprendre qui a lancé quoi.
-- Tri par consommation, historique court (quelques minutes) pour repérer les pics.
+### Deux vues
 
-Deuxième temps :
-- Inventaire de ce qui démarre seul : éléments d'ouverture de session,
-  LaunchAgents (`~/Library/LaunchAgents`, `/Library/LaunchAgents`),
-  LaunchDaemons (`/Library/LaunchDaemons`), extensions système.
-- Pour chaque élément : quelle app l'a installé, s'il tourne, ce qu'il consomme.
-- Actions : quitter ou forcer à quitter un processus, désactiver un élément de
-  démarrage.
+**Diagnostic** : répondre à « pourquoi mon Mac rame ? » à tout moment.
+- État du poste en un coup d'œil : CPU, pression mémoire et swap, débit disque,
+  débit réseau, état thermique (bridage), batterie.
+- Les plus gros consommateurs par axe (CPU, mémoire, écritures et lectures disque,
+  réseau, énergie), regroupés par app : les « Helper » comptent pour l'app qui les
+  a lancés.
+- Une liste « Anormal » qui explique en clair ce qui cloche, par exemple :
+  - un processus au-dessus de 80 % de CPU depuis plusieurs minutes ;
+  - une mémoire qui grossit sans redescendre (fuite) ;
+  - une pression mémoire haute ou un swap qui gonfle ;
+  - un disque saturé en écriture par un seul processus ;
+  - un service qui redémarre en boucle (launchd le relance sans cesse) ;
+  - une app qui tient la saisie sécurisée et bloque les raccourcis
+    (cas d'Arc, le 9 novembre) ;
+  - un processus figé ou qui ne répond plus ;
+  - le Mac bridé par la chaleur.
+- Un historique court (une dizaine de minutes) pour voir les pics passés, pas
+  seulement l'instant présent.
+- L'icône de la barre des menus signale une anomalie, sans notification intrusive.
 
-Technique : `libproc` (`proc_listpids`, `proc_pidinfo`) suffit pour les processus
-de l'utilisateur. Les détails des processus système, l'inventaire complet des
-éléments de démarrage (`sfltool dumpbtm`) et leur désactivation demandent des
-droits administrateur, donc un helper privilégié à prévoir. La consommation réseau
-par processus n'a pas d'API publique : à garder pour plus tard.
+**Démarrage** : tout ce qui se lance seul, lisible par un humain.
+- Inventaire complet : éléments d'ouverture de session, éléments d'arrière-plan
+  déclarés par les apps, LaunchAgents (utilisateur et global), LaunchDaemons.
+- Un nom lisible pour chaque élément, avec l'icône de son app :
+  1. l'app qui contient l'exécutable (`/Applications/Foo.app/…` → Foo) ;
+  2. sinon, l'éditeur qui l'a signé (« Developer ID Application: Google LLC ») ;
+  3. sinon, un dictionnaire des libellés connus livré avec Multitool
+     (`com.google.keystone.agent` → « Mise à jour Google ») ;
+  4. en dernier recours, le libellé brut, nettoyé.
+- Pour chaque élément : actif ou désactivé, en cours ou non, PID, dernier code de
+  sortie, nombre de relances, ce qu'il consomme, et qui l'a installé.
+- Actions : désactiver, réactiver, afficher le fichier dans le Finder, ouvrir
+  le plist.
+- Repérer les orphelins : un agent dont l'app a été supprimée.
+
+### Ce que macOS permet sans droits administrateur
+
+Mesuré le 15 novembre 2026 sur macOS 27.2 :
+
+| Besoin | Sans droits admin | Avec droits admin |
+|---|---|---|
+| CPU, mémoire, disque, énergie par processus (`proc_pid_rusage`) | les processus de l'utilisateur, environ 70 % du total | tous |
+| Réseau par processus (`nettop`) | oui | oui |
+| Services launchd chargés (`launchctl print`) | oui, utilisateur et système | oui |
+| Fichiers LaunchAgents et LaunchDaemons | lecture oui | lecture et écriture |
+| Éléments d'arrière-plan (`sfltool dumpbtm`) | oui | oui |
+| Désactiver un agent de l'utilisateur (`launchctl disable gui/…`) | oui | oui |
+| Désactiver un agent global ou un daemon (`launchctl disable system/…`) | non | oui |
+
+Conséquence : la vue Diagnostic et l'inventaire marchent sans rien demander.
+Seuls les compteurs des processus système et la désactivation des daemons
+demandent le mot de passe. Première approche : demander le mot de passe au moment
+de l'action, par la fenêtre standard de macOS. Un helper privilégié permanent
+(`SMAppService.daemon`) seulement si ça devient pénible.
+
+### Découpage
+
+1. **Diagnostic, lecture seule** : état du poste, gros consommateurs par axe,
+   liste « Anormal », historique court. Fenêtre dédiée, résumé dans le popover.
+2. **Démarrage, lecture** : inventaire, noms lisibles, état, afficher dans le Finder.
+3. **Démarrage, actions** : désactiver et réactiver, avec le mot de passe pour ce
+   qui est système.
+4. **Actions sur les processus** : quitter, forcer à quitter, ouvrir le dossier de
+   l'exécutable.
 
 Questions ouvertes :
-- Fenêtre dédiée ou seulement une vue compacte dans le popover ?
-- Alertes quand un processus dépasse un seuil ?
+- Seuils des anomalies : valeurs par défaut à ajuster à l'usage.
+- Faut-il garder un historique plus long sur disque, pour retrouver le pic d'hier ?
 
 ## 3. Menu Bar (façon Bartender / Ice)
 
