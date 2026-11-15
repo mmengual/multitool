@@ -3,6 +3,15 @@
   <channel>
     <title>Multitool</title>
     <item>
+      <title>Multitool 0.2.2</title>
+      <pubDate>Sun, 15 Nov 2026 21:07:08 GMT</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>Inversion ⌘ / ⌥ refaite : un interrupteur par clavier branché, qui pilote le réglage Touches de modification de macOS. L&#x27;inversion marche aussi dans les champs de mot de passe et sans Multitool.</li><li>Après la mise à jour, rallumer l&#x27;inversion pour son clavier dans Réglages → Inversion ⌘ / ⌥ : l&#x27;ancien mode automatique Logitech disparaît.</li></ul>]]></description>
+      <enclosure url="https://api.github.com/repos/mmengual/multitool/releases/assets/752353312" type="application/octet-stream" sparkle:edSignature="Q0sPgkfawA2PuTj0m4bxlHMPKUnPGllSyeL/spDZwjIjCGURXEWt0PQDjLu8CekMqhUEH39XVM1T2r3SqVa0Bw==" length="2457300"/>
+    </item>
+    <item>
       <title>Multitool 0.2.1</title>
       <pubDate>Thu, 05 Nov 2026 11:45:21 GMT</pubDate>
       <sparkle:version>6</sparkle:version>
