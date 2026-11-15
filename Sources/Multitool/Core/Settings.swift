@@ -43,6 +43,11 @@ final class Settings: ObservableObject {
 
     // MARK: Clipboard
 
+    /// Background watch of the machine, to flag anomalies in the menu bar.
+    @Published var monitorEnabled: Bool = true {
+        didSet { defaults.set(monitorEnabled, forKey: "monitor.enabled") }
+    }
+
     @Published var clipboardEnabled: Bool = true {
         didSet { defaults.set(clipboardEnabled, forKey: "clipboard.enabled") }
     }
@@ -97,6 +102,7 @@ final class Settings: ObservableObject {
         if let v = defaults.object(forKey: "resizeButton") as? Int,
            let b = MouseButton(rawValue: v) { resizeButton = b }
 
+        if let v = defaults.object(forKey: "monitor.enabled") as? Bool { monitorEnabled = v }
         if let v = defaults.object(forKey: "clipboard.enabled") as? Bool { clipboardEnabled = v }
         if defaults.object(forKey: "clipboard.hotKey") != nil {
             // A stored `null` means the user cleared the shortcut on purpose.

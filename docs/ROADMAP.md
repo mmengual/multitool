@@ -9,7 +9,7 @@ risqué, et chaque section se complète au fur et à mesure.
 |---|---|---|---|
 | 0 | Socle modules | fait | Prérequis : le popover d'origine (Settings / Stats / Info) ne tenait pas quatre outils de plus. |
 | 1 | Clipboard | fait (v1) | APIs publiques et stables, aucune nouvelle permission, périmètre clair. |
-| 2 | Processus & ressources | cadré | Diagnostic du poste et éléments de démarrage. Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
+| 2 | Processus & ressources | en cours | Diagnostic du poste et éléments de démarrage. Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
 | 3 | Menu Bar | à faire | Repose sur des contournements (macOS n'offre pas d'API pour gérer les icônes des autres apps). Fragile d'une version de macOS à l'autre. |
 | 4 | Screenshot | à faire | Le plus gros chantier, et le plus personnel. Réutilise la sélection de zone et ScreenCaptureKit déjà présents. |
 
@@ -130,8 +130,10 @@ de l'action, par la fenêtre standard de macOS. Un helper privilégié permanent
 
 ### Découpage
 
-1. **Diagnostic, lecture seule** : état du poste, gros consommateurs par axe,
-   liste « Anormal », historique court. Fenêtre dédiée, résumé dans le popover.
+1. **Diagnostic, lecture seule** (fait le 15 novembre 2026, à éprouver) : état du
+   poste, gros consommateurs par axe, liste « Anormal », historique court, origines
+   douteuses, service de lecture privilégié. Fenêtre dédiée, résumé dans le popover,
+   icône de la barre des menus teintée en cas d'anomalie.
 2. **Démarrage, lecture** : inventaire, noms lisibles, état, afficher dans le Finder.
 3. **Démarrage, actions** : désactiver et réactiver, avec le mot de passe pour ce
    qui est système.

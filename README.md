@@ -15,7 +15,7 @@ frappes d'un clavier défectueux. Elle a grossi, d'où le changement de nom.
 | Window Mover | en place | Déplace ou redimensionne n'importe quelle fenêtre en maintenant des modificateurs et en glissant à la souris. |
 | Inversion ⌘ / ⌥ | en place | Inverse Commande et Option clavier par clavier, en pilotant le réglage Touches de modification de macOS. |
 | Partage de zone | en place | Diffuse une zone de l'écran dans une fenêtre invisible que Teams, Zoom ou Meet peuvent partager. |
-| Processus et ressources | prévu | Carte des processus, de ce qui consomme, et des éléments lancés au démarrage. |
+| Processus et ressources | en cours | Moniteur : état du poste, consommateurs par app (processeur, mémoire, disque, réseau, énergie), anomalies expliquées, exécutables d'origine douteuse. Éléments de démarrage à venir. |
 | Barre des menus | prévu | Choisir quelles icônes restent visibles, les autres passent dans un menu secondaire. |
 | Captures d'écran | prévu | Captures et retouche, dans l'esprit de Shottr. |
 
@@ -57,6 +57,9 @@ Options de développement, à passer au binaire
   `updates`, `about`, `chatter`, `keyRemap`, `windowMover`, `regionShare`, `clipboard`) ;
 - `--clipboard` ouvre l'historique du presse-papiers ;
 - `--popover` ouvre le popover de la barre des menus ;
+- `--monitor` ouvre le moniteur ;
+- `--snapshot <fichier.png>` dessine la fenêtre au premier plan dans un PNG au bout de 12 s,
+  sans autorisation d'enregistrement de l'écran ;
 - `--update-in-background` cherche une mise à jour sans fenêtre et l'installe à la fermeture.
 
 ## Mises à jour
@@ -122,6 +125,9 @@ Sources/Multitool/
   KeyRemap/        inversion ⌘ / ⌥ par le réglage macOS de chaque clavier
   WindowMover/     déplacement et redimensionnement des fenêtres
   RegionShare/     sélection de zone, capture ScreenCaptureKit, fenêtre de partage
+  Monitor/         échantillonnage, anomalies, service de lecture, nettop
+Sources/MultitoolShared/  protocole XPC et lecture des processus, communs à l'app et au service
+Sources/MultitoolHelper/  service de lecture privilégié (daemon launchd)
 ```
 
 - Ajouter un module : un dossier, une entrée dans `SettingsCatalog`
@@ -137,4 +143,14 @@ Sources/Multitool/
   puis le pousse au clavier branché pour qu'il prenne effet tout de suite. macOS
   le réapplique seul à chaque branchement. Pas d'interception : ça marche aussi dans
   les champs de mot de passe et sans l'autorisation Accessibilité.
+- Moniteur, lecture complète : macOS refuse à un utilisateur les compteurs des processus
+  de root. `MultitoolHelper` est un daemon déclaré dans
+  `Contents/Library/LaunchDaemons` et enregistré par `SMAppService.daemon` : l'utilisateur
+  l'autorise une fois (Réglages Système → Général → Ouverture et extensions). Il ne fait
+  que lire, n'accepte que Multitool signé par l'équipe `UGUP3H993V`, et l'app ne parle qu'à
+  un service signé de même (`MultitoolShared/HelperProtocol.swift`). Il s'arrête seul après
+  5 minutes sans demande. Après une mise à jour, l'app lui demande de quitter pour que
+  launchd relance le nouveau binaire.
+- Réseau par processus : `nettop -L 1` relancé à chaque mesure (son mode continu occupe
+  plus d'un cœur), seulement fenêtre ouverte.
 - Logs : `log stream --predicate 'subsystem == "com.mmengual.multitool"'`.

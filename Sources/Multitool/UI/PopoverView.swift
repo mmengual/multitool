@@ -9,6 +9,7 @@ struct PopoverView: View {
     @ObservedObject private var share = RegionShareController.shared
     @ObservedObject private var store = ClipboardStore.shared
     @ObservedObject private var keyboards = KeyboardSwap.shared
+    @ObservedObject private var monitor = ResourceMonitor.shared
     let openSettings: (SettingsPane?) -> Void
 
     var body: some View {
@@ -22,6 +23,15 @@ struct PopoverView: View {
                             .buttonStyle(OrbeButtonStyle(variante: .contour, compact: true))
                     }
                     OrbeSwitch(isOn: $settings.clipboardEnabled)
+                }
+                OrbeFilet(inset: 0)
+                row(.monitor, status: settings.monitorEnabled ? monitor.summary : "Surveillance coupée") {
+                    if !monitor.anomalies.isEmpty {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 12)).foregroundStyle(Orbe.alerte)
+                    }
+                    Button("Ouvrir") { MonitorWindowController.shared.show() }
+                        .buttonStyle(OrbeButtonStyle(variante: .contour, compact: true))
                 }
                 OrbeFilet(inset: 0)
                 row(.chatter, status: chatterStatus) { OrbeSwitch(isOn: $settings.enabled) }

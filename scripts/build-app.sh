@@ -17,6 +17,7 @@ cd "$ROOT"
 
 APP_NAME="Multitool"
 BUNDLE_ID="com.mmengual.multitool"
+HELPER_ID="com.mmengual.multitool.helper"
 APP="$ROOT/$APP_NAME.app"
 FEED_URL="https://raw.githubusercontent.com/mmengual/multitool/releases/appcast.xml"
 DEFAULT_IDENTITY="6049975204961E83D9BD36350013067DBA1D1307" # Apple Development: maximemengual@gmail.com
@@ -46,9 +47,24 @@ fi
 swift build -c release
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks" \
+         "$APP/Contents/Library/LaunchDaemons"
 
 cp ".build/release/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
+# Read-only privileged helper, registered by the app with SMAppService.daemon.
+cp ".build/release/MultitoolHelper" "$APP/Contents/MacOS/MultitoolHelper"
+cat > "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$HELPER_ID</string>
+    <key>BundleProgram</key><string>Contents/MacOS/MultitoolHelper</string>
+    <key>MachServices</key><dict><key>$HELPER_ID</key><true/></dict>
+    <key>AssociatedBundleIdentifiers</key><array><string>$BUNDLE_ID</string></array>
+</dict>
+</plist>
+EOF
 ditto ".build/release/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 # Orbe fonts (Outfit, Manrope, JetBrains Mono, SIL OFL), loaded through ATSApplicationFontsPath.
 cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"
@@ -85,8 +101,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# Sign inside out: Sparkle's helpers, then the app.
+# Sign inside out: Sparkle's helpers, the privileged helper, then the app.
+# The helper checks that its client is com.mmengual.multitool signed by this team,
+# and the app checks the same of the helper (MultitoolShared/HelperProtocol.swift).
 codesign --force --deep --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework"
+codesign --force --sign "$IDENTITY" --identifier "$HELPER_ID" "$APP/Contents/MacOS/MultitoolHelper"
 codesign --force --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP"
 

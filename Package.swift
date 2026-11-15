@@ -10,12 +10,26 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Multitool",
-            dependencies: [.product(name: "Sparkle", package: "Sparkle")],
+            dependencies: [
+                "MultitoolShared",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/Multitool",
             linkerSettings: [
                 // Sparkle.framework is copied into Contents/Frameworks by scripts/build-app.sh.
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
-        )
+        ),
+        // Read-only privileged helper, run as root by launchd (SMAppService.daemon).
+        .executableTarget(
+            name: "MultitoolHelper",
+            dependencies: ["MultitoolShared"],
+            path: "Sources/MultitoolHelper"
+        ),
+        // What the app and the helper share: the XPC protocol and the process sampler.
+        .target(
+            name: "MultitoolShared",
+            path: "Sources/MultitoolShared"
+        ),
     ]
 )

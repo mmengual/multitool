@@ -7,6 +7,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case chatter, keyRemap
     case windowMover, regionShare
     case clipboard
+    case monitor
 }
 
 /// One sidebar entry: its name, glyph, and the sentence the content header
@@ -50,6 +51,10 @@ enum SettingsCatalog {
                              summary: "Déplacer ou redimensionner une fenêtre en la saisissant n'importe où."),
             SettingsCategory(pane: .regionShare, title: "Partage de zone", symbol: "rectangle.dashed",
                              summary: "Diffuser une partie de l'écran dans Teams, Zoom ou Meet."),
+        ]),
+        SettingsCategoryGroup(title: "Système", categories: [
+            SettingsCategory(pane: .monitor, title: "Processus et ressources", symbol: "gauge.with.dots.needle.33percent",
+                             summary: "Ce qui tourne, ce qui consomme, et ce qui ralentit le Mac."),
         ]),
         SettingsCategoryGroup(title: "Productivité", categories: [
             SettingsCategory(pane: .clipboard, title: "Presse-papiers", symbol: "doc.on.clipboard",
@@ -219,6 +224,7 @@ struct SettingsRootView: View {
         case .windowMover: WindowMoverPane()
         case .regionShare: RegionSharePane()
         case .clipboard: ClipboardPane()
+        case .monitor: MonitorPane()
         }
     }
 }
@@ -243,6 +249,7 @@ struct ModuleHeaderToggle: View {
         case .chatter: return $settings.enabled
         case .windowMover: return $settings.windowMoverEnabled
         case .clipboard: return $settings.clipboardEnabled
+        case .monitor: return $settings.monitorEnabled
         default: return nil
         }
     }

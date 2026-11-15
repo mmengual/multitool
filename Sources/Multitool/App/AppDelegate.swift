@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardSwap.shared.start()
         GameDetector.shared.start()
         ClipboardModule.shared.start()
+        HelperClient.shared.refresh()
         UpdateController.shared.start()
 
         bindModules()
@@ -74,6 +75,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSettings(pane)
         }
         if args.contains("--clipboard") { ClipboardPanelController.shared.show() }
+        if args.contains("--monitor") { MonitorWindowController.shared.show() }
+        // `--snapshot <file.png>`: after 12 s, draws the frontmost window into a PNG
+        // (no Screen Recording permission needed, it is our own window).
+        if let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) {
+            let path = args[i + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+                guard let view = NSApp.windows.first(where: { $0.isVisible && $0.level == .normal })?.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            }
+        }
         if args.contains("--update-in-background") { UpdateController.shared.checkInBackground() }
         if args.contains("--popover") {
             // The status item needs a run loop pass to get its place in the menu bar.
@@ -95,6 +108,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChatterDetector.shared.$totalDropped
             .receive(on: DispatchQueue.main)
             .sink { [weak self] count in self?.statusItem.button?.title = count > 0 ? " \(count)" : "" }
+            .store(in: &cancellables)
+
+        settings.$monitorEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { enabled in ResourceMonitor.shared.setBackgroundEnabled(enabled) }
+            .store(in: &cancellables)
+
+        // An anomaly tints the menu bar icon, without any notification.
+        ResourceMonitor.shared.$anomalies
+            .combineLatest(settings.$monitorEnabled)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] anomalies, enabled in
+                let flagged = enabled && anomalies.contains { $0.severity != .info }
+                self?.statusItem.button?.contentTintColor = flagged ? NSColor(Orbe.alerte) : nil
+                self?.statusItem.button?.toolTip = flagged ? anomalies.first?.title : "Multitool"
+            }
             .store(in: &cancellables)
 
         settings.$enabled
