@@ -25,6 +25,8 @@ final class HelperClient: ObservableObject {
     private var service: SMAppService { SMAppService.daemon(plistName: HelperIdentity.plistName) }
     private var connection: NSXPCConnection?
     private var checkedIdentity = false
+    /// One restart request per launch at most, so a mismatch can never loop.
+    private var restartRequested = false
 
     func refresh() {
         switch service.status {
@@ -117,9 +119,11 @@ final class HelperClient: ObservableObject {
         let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/MultitoolHelper").path
         let bundledDate = ((try? FileManager.default.attributesOfItem(atPath: bundled)[.modificationDate]) as? Date)?
             .timeIntervalSince1970 ?? 0
+        guard !restartRequested else { return }
         proxy.identity { version, date in
             if version != HelperIdentity.protocolVersion || abs(date - bundledDate) > 1 {
-                Log.monitor.info("helper outdated (v\(version)), restarting it")
+                Log.monitor.info("helper outdated (v\(version), \(date) vs \(bundledDate)), restarting it")
+                Task { @MainActor in self.restartRequested = true }
                 proxy.exitForUpdate()
                 Task { @MainActor in self.connection?.invalidate() }
             }

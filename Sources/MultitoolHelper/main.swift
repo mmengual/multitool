@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import MultitoolShared
 import os.log
@@ -25,7 +26,10 @@ final class HelperService: NSObject, MonitorHelperProtocol {
     }
 
     static let executableDate: Double = {
-        let path = CommandLine.arguments[0]
+        // launchd passes a relative argv[0] (BundleProgram): ask the kernel for the real path.
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(getpid(), &buffer, UInt32(buffer.count)) > 0 else { return 0 }
+        let path = String(cString: buffer)
         let date = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
         return date?.timeIntervalSince1970 ?? 0
     }()
