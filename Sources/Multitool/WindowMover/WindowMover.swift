@@ -31,6 +31,9 @@ struct ModifierMask: OptionSet, Equatable {
 private enum WindowOp {
     case move(window: AXUIElement, mouseStart: CGPoint, originStart: CGPoint)
     case resize(window: AXUIElement, mouseStart: CGPoint, sizeStart: CGSize)
+    // Multitool's own windows, moved with AppKit (see handleDown).
+    case moveOwn(window: NSWindow, mouseStart: CGPoint, frameStart: NSRect)
+    case resizeOwn(window: NSWindow, mouseStart: CGPoint, frameStart: NSRect)
 }
 
 private struct WindowCandidate {
@@ -168,6 +171,25 @@ final class WindowMover {
             return pass(event)
         }
 
+        // Multitool's own windows: an AX request to our own process is served on
+        // the calling thread, so setting a size from axQueue resized an NSWindow
+        // off the main thread and crashed the app. The tap runs on the main run
+        // loop: move them with AppKit, right here.
+        if candidate.pid == getpid() {
+            guard let window = ownWindow(matching: candidate.bounds) else { return pass(event) }
+            setSwallow(button, true)
+            switch button {
+            case .left: leftGen += 1
+            case .right: rightGen += 1
+            case .unset: return nil
+            }
+            window.orderFrontRegardless()
+            op = kind == .move
+                ? .moveOwn(window: window, mouseStart: downPoint, frameStart: window.frame)
+                : .resizeOwn(window: window, mouseStart: downPoint, frameStart: window.frame)
+            return nil
+        }
+
         // Commit to swallowing this click cycle now. AX resolution happens
         // async; even if it fails, the click has already been intercepted —
         // better than letting a context menu leak through in slow apps.
@@ -246,6 +268,32 @@ final class WindowMover {
             pendingWindow = window
             pendingSize = new
             pumpAX()
+        case .moveOwn(let window, let mouseStart, let frameStart):
+            // Event coordinates grow downwards, AppKit's upwards.
+            window.setFrameOrigin(NSPoint(x: frameStart.minX + (point.x - mouseStart.x),
+                                          y: frameStart.minY - (point.y - mouseStart.y)))
+        case .resizeOwn(let window, let mouseStart, let frameStart):
+            let minimum = window.frameRect(forContentRect: NSRect(origin: .zero, size: window.contentMinSize)).size
+            let width = max(minimum.width, frameStart.width + (point.x - mouseStart.x))
+            let height = max(minimum.height, frameStart.height + (point.y - mouseStart.y))
+            // Keep the top-left corner in place, like the AX resize of other apps.
+            window.setFrame(NSRect(x: frameStart.minX, y: frameStart.maxY - height, width: width, height: height),
+                            display: true)
+        }
+    }
+
+    /// The visible Multitool window at these WindowServer bounds (origin at the
+    /// top-left of the main screen, y downwards).
+    private func ownWindow(matching bounds: CGRect) -> NSWindow? {
+        let mainHeight = NSScreen.screens.first { $0.frame.origin == .zero }?.frame.height
+            ?? NSScreen.main?.frame.height ?? 0
+        return NSApp.windows.first { window in
+            guard window.isVisible else { return false }
+            let frame = window.frame
+            return abs(frame.minX - bounds.minX) < 3
+                && abs((mainHeight - frame.maxY) - bounds.minY) < 3
+                && abs(frame.width - bounds.width) < 3
+                && abs(frame.height - bounds.height) < 3
         }
     }
 
