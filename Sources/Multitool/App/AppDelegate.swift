@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Orbe, theme `sombre`: every window, popover and alert is dark.
         NSApp.appearance = NSAppearance(named: .darkAqua)
         NSApp.mainMenu = MainMenu.make(target: self)
+        HangWatchdog.start()
         setUpStatusItem()
 
         KeyboardSwap.shared.start()
@@ -76,6 +77,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if args.contains("--clipboard") { ClipboardPanelController.shared.show() }
         if args.contains("--monitor") { MonitorWindowController.shared.show() }
+        // `--stress-resize`: resizes the frontmost window 10 times a second for 30 s,
+        // to reproduce layout freezes.
+        if args.contains("--stress-resize") {
+            var step = 0
+            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                step += 1
+                guard step < 300, let window = NSApp.windows.first(where: { $0.isVisible && $0.level == .normal })
+                else { timer.invalidate(); return }
+                var frame = window.frame
+                frame.size.width = 860 + CGFloat((step * 37) % 500)
+                frame.size.height = 580 + CGFloat((step * 23) % 300)
+                window.setFrame(frame, display: true)
+            }
+        }
         // `--snapshot <file.png>`: after 12 s, draws the frontmost window into a PNG
         // (no Screen Recording permission needed, it is our own window).
         if let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) {

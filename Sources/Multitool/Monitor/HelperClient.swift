@@ -27,9 +27,29 @@ final class HelperClient: ObservableObject {
     private var checkedIdentity = false
     /// One restart request per launch at most, so a mismatch can never loop.
     private var restartRequested = false
+    /// After a connection error, the limited reading is used for a while. An
+    /// outdated helper that nobody calls exits after 5 minutes, and launchd then
+    /// starts the new binary.
+    private var retryAfter: Date?
 
+    /// SMAppService.status asks a system daemon and can be slow: read it off the
+    /// main thread, then publish.
     func refresh() {
-        switch service.status {
+        guard !refreshing else { return }
+        refreshing = true
+        Task.detached(priority: .utility) {
+            let status = SMAppService.daemon(plistName: HelperIdentity.plistName).status
+            await MainActor.run {
+                self.apply(status)
+                self.refreshing = false
+            }
+        }
+    }
+
+    private var refreshing = false
+
+    private func apply(_ status: SMAppService.Status) {
+        switch status {
         case .enabled: state = .enabled
         case .requiresApproval: state = .needsApproval
         case .notRegistered: state = .notInstalled
@@ -52,7 +72,7 @@ final class HelperClient: ObservableObject {
             lastError = error.localizedDescription
             Log.monitor.error("helper register failed: \(error.localizedDescription, privacy: .public)")
         }
-        refresh()
+        apply(service.status)
         if state == .needsApproval { SMAppService.openSystemSettingsLoginItems() }
     }
 
@@ -65,16 +85,26 @@ final class HelperClient: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
-        refresh()
+        apply(service.status)
     }
 
     func openApprovalSettings() { SMAppService.openSystemSettingsLoginItems() }
 
     /// One snapshot from the helper, or nil when it isn't available.
     nonisolated func snapshot() async -> ProcessSnapshot? {
-        guard let proxy = await proxy() else { return nil }
+        guard let connection = await connect() else { return nil }
         return await withCheckedContinuation { continuation in
             let once = Once()
+            // On a connection error, fall back to the limited reading at once.
+            let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+                Log.monitor.error("helper XPC error: \(error.localizedDescription, privacy: .public)")
+                once.run { continuation.resume(returning: nil) }
+                // 4102: the helper failed the signing check, typically an old binary
+                // whose file an update replaced. It exits once nobody calls it.
+                let signing = (error as NSError).code == 4102
+                Task { @MainActor in self.backOff(seconds: signing ? 360 : 10) }
+            } as? MonitorHelperProtocol
+            guard let proxy else { once.run { continuation.resume(returning: nil) }; return }
             proxy.snapshot { data in
                 once.run { continuation.resume(returning: try? JSONDecoder().decode(ProcessSnapshot.self, from: data)) }
             }
@@ -87,8 +117,16 @@ final class HelperClient: ObservableObject {
 
     // MARK: - Connection
 
-    private func proxy() -> MonitorHelperProtocol? {
-        guard service.status == .enabled else { return nil }
+    private func backOff(seconds: TimeInterval) {
+        retryAfter = Date().addingTimeInterval(seconds)
+        connection?.invalidate()
+        connection = nil
+        checkedIdentity = false
+    }
+
+    private func connect() -> NSXPCConnection? {
+        guard state == .enabled else { return nil }
+        if let retryAfter, Date() < retryAfter { return nil }
         if connection == nil {
             let connection = NSXPCConnection(machServiceName: HelperIdentity.machService, options: .privileged)
             connection.remoteObjectInterface = NSXPCInterface(with: MonitorHelperProtocol.self)
@@ -103,14 +141,11 @@ final class HelperClient: ObservableObject {
             connection.resume()
             self.connection = connection
         }
-        let proxy = connection?.remoteObjectProxyWithErrorHandler { error in
-            Log.monitor.error("helper XPC error: \(error.localizedDescription, privacy: .public)")
-        } as? MonitorHelperProtocol
-        if !checkedIdentity, let proxy {
+        if !checkedIdentity, let proxy = connection?.remoteObjectProxyWithErrorHandler({ _ in }) as? MonitorHelperProtocol {
             checkedIdentity = true
             checkIdentity(proxy)
         }
-        return proxy
+        return connection
     }
 
     /// After an update, the helper still running is the previous binary: ask it

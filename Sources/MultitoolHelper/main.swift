@@ -25,14 +25,16 @@ final class HelperService: NSObject, MonitorHelperProtocol {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { exit(0) }
     }
 
-    static let executableDate: Double = {
+    static let executableDate: Double = currentExecutableDate()
+
+    static func currentExecutableDate() -> Double {
         // launchd passes a relative argv[0] (BundleProgram): ask the kernel for the real path.
         var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         guard proc_pidpath(getpid(), &buffer, UInt32(buffer.count)) > 0 else { return 0 }
         let path = String(cString: buffer)
         let date = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
         return date?.timeIntervalSince1970 ?? 0
-    }()
+    }
 }
 
 /// Exits after a few idle minutes: launchd starts the helper again on the next
@@ -47,6 +49,14 @@ enum Activity {
                 exit(0)
             }
         }
+        // After an update the binary on disk is a new one, and the app refuses
+        // to talk to a helper whose file is gone: exit so launchd starts the new one.
+        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            if HelperService.currentExecutableDate() != HelperService.executableDate {
+                log.info("executable replaced, exiting")
+                exit(0)
+            }
+        }
     }
 }
 
@@ -55,7 +65,6 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
         connection.exportedInterface = NSXPCInterface(with: MonitorHelperProtocol.self)
         connection.exportedObject = HelperService()
         connection.resume()
-        Activity.touch()
         return true
     }
 }

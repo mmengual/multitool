@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-import CoreGraphics
+import IOKit
 
 /// Machine-wide counters, read without privileges.
 struct SystemReading {
@@ -109,9 +109,18 @@ enum SystemStats {
 
     // MARK: Secure Input
 
+    /// Read from the I/O Registry, not CGSessionCopyCurrentDictionary: this runs
+    /// off the main thread, and opening a WindowServer connection there made
+    /// AppKit resize the status item off the main thread, which crashes the app.
     private static func secureInputPID() -> Int32? {
-        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return nil }
-        return (session["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        guard let users = IORegistryEntryCreateCFProperty(root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [[String: Any]] else { return nil }
+        for user in users where (user["kCGSSessionOnConsoleKey"] as? NSNumber)?.boolValue == true {
+            return (user["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
+        }
+        return nil
     }
 
     // MARK: sysctl

@@ -58,6 +58,7 @@ Options de développement, à passer au binaire
 - `--clipboard` ouvre l'historique du presse-papiers ;
 - `--popover` ouvre le popover de la barre des menus ;
 - `--monitor` ouvre le moniteur ;
+- `--stress-resize` redimensionne la fenêtre au premier plan 10 fois par seconde pendant 30 s ;
 - `--snapshot <fichier.png>` dessine la fenêtre au premier plan dans un PNG au bout de 12 s,
   sans autorisation d'enregistrement de l'écran ;
 - `--update-in-background` cherche une mise à jour sans fenêtre et l'installe à la fermeture.
@@ -153,4 +154,10 @@ Sources/MultitoolHelper/  service de lecture privilégié (daemon launchd)
   launchd relance le nouveau binaire.
 - Réseau par processus : `nettop -L 1` relancé à chaque mesure (son mode continu occupe
   plus d'un cœur), seulement fenêtre ouverte.
+- Gel de l'interface : `HangWatchdog` journalise toute pause du fil principal de plus
+  d'une seconde (« main thread was blocked for … s »).
+- Fil principal : le moteur du moniteur tourne en arrière-plan et ne doit appeler ni
+  AppKit ni le serveur de fenêtres (`CGSession…`). Une connexion au serveur de fenêtres
+  ouverte hors du fil principal a fait planter l'app (redimensionnement de l'icône de la
+  barre des menus hors du fil principal).
 - Logs : `log stream --predicate 'subsystem == "com.mmengual.multitool"'`.
