@@ -3,6 +3,15 @@
   <channel>
     <title>Multitool</title>
     <item>
+      <title>Multitool 0.3.2</title>
+      <pubDate>Tue, 17 Nov 2026 10:38:24 GMT</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>Corrige le plantage quand Window Mover déplace ou redimensionne une fenêtre de Multitool (moniteur, réglages).</li></ul>]]></description>
+      <enclosure url="https://api.github.com/repos/mmengual/multitool/releases/assets/758634721" type="application/octet-stream" sparkle:edSignature="CqrvbYgnt6r1n+8kMpuLpfrCM7pPyrPV/L0Sd2QIpHgq74iXZEWrqpgXrbTUknm7A1RAhbkgkMD61m1HrVs0DA==" length="2711243"/>
+    </item>
+    <item>
       <title>Multitool 0.3.1</title>
       <pubDate>Tue, 17 Nov 2026 09:14:08 GMT</pubDate>
       <sparkle:version>10</sparkle:version>
