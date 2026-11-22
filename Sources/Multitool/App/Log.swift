@@ -8,4 +8,5 @@ enum Log {
     static let clipboard = Logger(subsystem: subsystem, category: "Clipboard")
     static let updates   = Logger(subsystem: subsystem, category: "Updates")
     static let monitor   = Logger(subsystem: subsystem, category: "Monitor")
+    static let menuBar   = Logger(subsystem: subsystem, category: "MenuBar")
 }

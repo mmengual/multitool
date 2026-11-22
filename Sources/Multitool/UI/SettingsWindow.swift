@@ -8,6 +8,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case windowMover, regionShare
     case clipboard
     case monitor
+    case menuBar
 }
 
 /// One sidebar entry: its name, glyph, and the sentence the content header
@@ -51,6 +52,8 @@ enum SettingsCatalog {
                              summary: "Déplacer ou redimensionner une fenêtre en la saisissant n'importe où."),
             SettingsCategory(pane: .regionShare, title: "Partage de zone", symbol: "rectangle.dashed",
                              summary: "Diffuser une partie de l'écran dans Teams, Zoom ou Meet."),
+            SettingsCategory(pane: .menuBar, title: "Barre des menus", symbol: "menubar.rectangle",
+                             summary: "Les icônes de la barre des menus, et celles que macOS range dans son déroulé."),
         ]),
         SettingsCategoryGroup(title: "Système", categories: [
             SettingsCategory(pane: .monitor, title: "Processus et ressources", symbol: "gauge.with.dots.needle.33percent",
@@ -225,6 +228,7 @@ struct SettingsRootView: View {
         case .regionShare: RegionSharePane()
         case .clipboard: ClipboardPane()
         case .monitor: MonitorPane()
+        case .menuBar: MenuBarPane()
         }
     }
 }

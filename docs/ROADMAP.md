@@ -10,7 +10,7 @@ risqué, et chaque section se complète au fur et à mesure.
 | 0 | Socle modules | fait | Prérequis : le popover d'origine (Settings / Stats / Info) ne tenait pas quatre outils de plus. |
 | 1 | Clipboard | fait (v1) | APIs publiques et stables, aucune nouvelle permission, périmètre clair. |
 | 2 | Processus & ressources | en cours | Diagnostic du poste et éléments de démarrage. Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
-| 3 | Menu Bar | à faire | Repose sur des contournements (macOS n'offre pas d'API pour gérer les icônes des autres apps). Fragile d'une version de macOS à l'autre. |
+| 3 | Menu Bar | prototype fait | Pas d'API pour gérer les icônes des autres apps : le module pilote le débordement natif de macOS 27 par l'Accessibilité. À revérifier à chaque version de macOS. |
 | 4 | Screenshot | à faire | Le plus gros chantier, et le plus personnel. Réutilise la sélection de zone et ScreenCaptureKit déjà présents. |
 
 ---
@@ -144,31 +144,59 @@ Questions ouvertes :
 - Seuils des anomalies : valeurs par défaut à ajuster à l'usage.
 - Faut-il garder un historique plus long sur disque, pour retrouver le pic d'hier ?
 
-## 3. Menu Bar (façon Bartender / Ice)
+## 3. Menu Bar (déroulé natif de macOS piloté par Multitool)
 
-**Besoin** : garder un nombre fixe d'icônes visibles dans la barre des menus, et
-ranger les autres dans un menu secondaire.
+**Besoin** : choisir, icône par icône, ce qui reste dans la barre des menus et ce
+qui passe dans une zone cachée, et dérouler cette zone d'un geste.
 
 Comportement visé :
-- Les N icônes les plus à droite restent visibles, N étant réglable.
-- Les autres sont masquées et accessibles depuis un menu secondaire ouvert par
-  l'icône Multitool (ou un chevron dédié).
-- Choisir quelles apps sont toujours visibles, et lesquelles sont toujours masquées.
+- Une page de réglages liste toutes les icônes de la barre avec leur application.
+- Chaque icône a un état : **Barre principale** (par défaut) ou **Barre cachée**.
+  Un troisième état, **Masquée**, est voulu mais n'a pas encore de mécanisme
+  (voir les questions ouvertes).
+- La barre cachée se déroule de 2 façons, au choix dans les réglages :
+  - au clic sur un chevron dédié, qui marque aussi la frontière entre les 2 zones ;
+  - au survol du coin haut droit de l'écran.
+- Une fois déroulée, elle reste tant que la souris est dans la barre des menus.
+  Elle se referme dès que la souris en sort.
+- L'horloge et le Centre de contrôle restent dans la barre principale : macOS ne
+  permet pas de les déplacer.
 
-Technique, du plus simple au plus délicat :
-1. **Masquer** : Multitool place une icône « séparateur » dont la largeur devient
-   énorme ; tout ce qui est à sa gauche est poussé hors de l'écran. C'est la
-   méthode de Hidden Bar, simple et fiable.
-2. **Afficher les icônes masquées dans un menu** : il faut lister les icônes
-   (fenêtres de la barre via `CGWindowList`), capturer leur image (permission
-   Enregistrement de l'écran) et simuler un clic sur l'icône d'origine quand on
-   clique sur sa copie. C'est la méthode d'Ice, plus fragile.
-3. **Réordonner** automatiquement pour respecter « N visibles » : simuler un
-   glisser avec ⌘ sur les icônes. Le plus fragile des trois.
+### Ce que macOS 27 impose
 
-À vérifier avant de se lancer : les réglages natifs de la barre des menus dans les
-versions récentes de macOS (autoriser ou non une app dans la barre), et
-l'encoche des MacBook, derrière laquelle des icônes disparaissent sans prévenir.
+Mesuré le 22 novembre 2026 sur macOS 27.2.1, écran du MacBook seul :
+
+| Constat | Conséquence |
+|---|---|
+| La barre est dessinée par un seul processus, `MenuBarAgent`. Les icônes n'ont plus de fenêtre propre. | La méthode d'Ice (lister les fenêtres par `CGWindowList`, capturer chaque icône) ne marche plus. |
+| L'Accessibilité rend chaque icône visible avec son app, sa position et sa largeur (`AXExtrasMenuBar`). | L'inventaire ne demande aucune nouvelle permission. |
+| Quand la place manque, macOS évince les icônes les plus à gauche vers son propre débordement. | Un séparateur de largeur calibrée masque les icônes à sa gauche. Testé : 330 points évincent 8 icônes. |
+| Un séparateur trop large (10 000 points) est évincé seul et ne masque rien. | La largeur doit suivre la place libre, qui bouge quand une icône change de largeur. |
+| L'indicateur natif (`menu-bar-overflow-indicator`) répond à `AXPress`. Les vraies icônes évincées s'affichent alors à gauche de l'encoche, à la place des menus de l'app. | Multitool ouvre et ferme le déroulé natif. Pas de copie d'icône, pas de clic relayé, pas de permission Enregistrement de l'écran. |
+| Déroulé fermé, les icônes évincées sortent de l'Accessibilité. | Une bande dessinée par Multitool sous la barre a été écartée : elle ne pourrait ni photographier ces icônes ni cliquer dessus. |
+| Un glisser `⌘` simulé déplace une icône, dans les 2 sens. | C'est le moyen de ranger une icône dans une zone. Le curseur est pris moins d'une seconde. |
+
+Décision du 22 novembre 2026 : Multitool pilote le déroulé natif. La bande sous la
+barre est abandonnée.
+
+### Découpage
+
+1. **Inventaire, lecture seule** : page de réglages avec les icônes, leur app et
+   leur zone actuelle.
+2. **Chevron et masquage** : le chevron séparateur, sa largeur calibrée, le clic
+   qui ouvre et ferme le déroulé natif.
+3. **Classement** : choisir la zone d'une icône dans les réglages, Multitool la
+   déplace par glisser `⌘` simulé. Une nouvelle icône arrive en barre principale.
+4. **Survol** : ouverture par le coin haut droit, fermeture à la sortie de la barre.
+
+Questions ouvertes :
+- État **Masquée** : aucun mécanisme prouvé, tout ce qui est évincé réapparaît
+  dans le déroulé natif. Piste non testée : le réglage macOS qui autorise ou non
+  une app dans la barre des menus.
+- Écran externe, sans encoche : non testé.
+- Délais : le masquage a mis entre 1 et 3 secondes à se voir. Le délai d'ouverture
+  et de fermeture du déroulé natif reste à mesurer.
+- Règle de calibrage de la largeur du séparateur.
 
 ## 4. Screenshot (dans l'esprit de Shottr)
 
