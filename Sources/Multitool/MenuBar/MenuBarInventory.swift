@@ -408,7 +408,11 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
             if !value.isEmpty { return value }
         }
         guard depth > 0 else { return "" }
-        for child in children(element).prefix(4) {
+        // Never into an icon's menu: reading the items of a closed menu makes its app
+        // build it, and some apps then take the keyboard focus away from the frontmost
+        // app (measured on 23/11: reading Amphetamine's menu items brought another app
+        // to the front, at each scan). Reading the role is safe.
+        for child in children(element).prefix(4) where string(child, kAXRoleAttribute) != "AXMenu" {
             let value = readableLabel(child, depth: depth - 1)
             if !value.isEmpty { return value }
         }
