@@ -26,13 +26,14 @@ struct MenuBarPane: View {
 
             OrbeSection(title: "Barre cachée",
                         note: settings.menuBarEnabled
-                            ? "Glissez le chevron avec ⌘ : tout ce qui est à sa gauche est caché." : nil) {
-                let hidden = inventory.items.filter { $0.zone == .hidden }
+                            ? "Cliquez le chevron pour afficher ces icônes sous l'horloge. Glissez-le avec ⌘ : tout ce qui est à sa gauche est caché." : nil) {
+                // Overflow closed, the evicted icons are unreadable: the band's cache.
+                let hidden = inventory.overflowOpen ? inventory.items.filter { $0.zone == .hidden } : inventory.evicted
                 if !hidden.isEmpty {
                     rows(for: hidden)
-                } else if inventory.overflowIndicator != nil && !inventory.overflowOpen {
-                    OrbeRow(title: "Le déroulé de macOS est fermé",
-                            detail: "Ses icônes ne sont lisibles que lorsqu'il est ouvert.")
+                } else if inventory.overflowIndicator != nil && inventory.lastFullScan == nil {
+                    OrbeRow(title: "Icônes cachées pas encore lues",
+                            detail: "Multitool les lit à la première ouverture de la bande.")
                 } else {
                     OrbeRow(title: "Aucune icône cachée")
                 }

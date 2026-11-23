@@ -2,7 +2,8 @@ import AppKit
 
 /// The chevron status item that splits the menu bar in 2. Its length fills the free
 /// space left of it, so macOS evicts the icons on its left into its own overflow.
-/// A click opens or closes that native overflow (`MenuBarOverflow`).
+/// A click opens or closes the band (`MenuBarBand`), a ⌥-click the native overflow
+/// (`MenuBarOverflow`).
 ///
 /// The user places it with a ⌘-drag, macOS keeps the place under `autosaveName`.
 @MainActor
@@ -26,6 +27,12 @@ final class MenuBarChevron: NSObject {
     private static let evictionStep: CGFloat = 20
     /// Capped attempts after an eviction, then the chevron stays at the glyph length.
     private static let maxEvictionRetries = 3
+    /// Preferred position written when the chevron is born invisible. Measured on
+    /// macOS 27.2 with test items: 260 places an item right of the third-party icons,
+    /// just left of the system ones. The value is not a distance in points.
+    nonisolated static let rescuePosition: Double = 260
+    /// Delay before checking that a new chevron is visible.
+    private static let birthCheckDelay: TimeInterval = 1
 
     private var item: NSStatusItem?
     private var observers: [NSObjectProtocol] = []
@@ -34,6 +41,16 @@ final class MenuBarChevron: NSObject {
     private var evictionCap: CGFloat?
     private var evictions = 0
     private var screenKey = ""
+    /// An eviction sign seen once: counted only if the next pass sees it again.
+    private var suspectedEviction = false
+    /// The chevron was recreated once at `rescuePosition` since `start()`.
+    private var rescued = false
+    /// Birth checks done since the creation, and invisible reads in a row.
+    private var birthChecks = 0
+    private var invisibleBirthReads = 0
+    private static let maxBirthChecks = 10
+    /// Last preferred position read, to tell a ⌘-drag from a layout move.
+    private var lastPosition: Double?
 
     private override init() { super.init() }
 
@@ -45,6 +62,12 @@ final class MenuBarChevron: NSObject {
     /// Creates the item, sets its length and watches its moves. Idempotent.
     func start() {
         guard item == nil else { return }
+        rescued = false
+        create()
+        observe()
+    }
+
+    private func create() {
         let item = NSStatusBar.system.statusItem(withLength: Self.glyphLength)
         // Right after the creation, so macOS restores the place chosen by the user.
         item.autosaveName = Self.autosaveName
@@ -60,8 +83,10 @@ final class MenuBarChevron: NSObject {
         self.item = item
         resetEvictions()
         screenKey = Self.screenConfigurationKey()
+        lastPosition = UserDefaults.standard.object(forKey: Self.positionKey) as? Double
+        birthChecks = 0
+        invisibleBirthReads = 0
         drawGlyph(length: Self.glyphLength)
-        observe()
         Log.menuBar.info("chevron created")
 
         // The status item needs a run loop pass to get its place in the menu bar.
@@ -73,6 +98,50 @@ final class MenuBarChevron: NSObject {
                     return
                 }
                 self.recalculate(reason: "start")
+            }
+        }
+        scheduleBirthCheck()
+    }
+
+    private func scheduleBirthCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.birthCheckDelay) { [weak self] in
+            MainActor.assumeIsolated { self?.checkBirth() }
+        }
+    }
+
+    /// A chevron created in a saturated bar is born in the overflow, invisible. The
+    /// length-based eviction check never sees it (it only acts above the glyph
+    /// length): recreate it once at `rescuePosition`, without restoring the old place.
+    /// Waits for a placed window (a screen), and needs 2 invisible reads in a row: no
+    /// screen yet, a hidden bar or a sleeping display don't count.
+    private func checkBirth() {
+        guard let item, !rescued else { return }
+        birthChecks += 1
+        let window = item.button?.window
+        let measurable = window?.screen != nil && Self.barShown && CGDisplayIsAsleep(CGMainDisplayID()) == 0
+        guard measurable else {
+            invisibleBirthReads = 0
+            if birthChecks < Self.maxBirthChecks { scheduleBirthCheck() }
+            return
+        }
+        guard let sign = Self.evictionSign(window) else { return }
+        invisibleBirthReads += 1
+        if invisibleBirthReads < 2 {
+            scheduleBirthCheck()
+            return
+        }
+        rescued = true
+        Log.menuBar.info("chevron born invisible (\(sign, privacy: .public)): recreated at preferred position \(Self.rescuePosition)")
+        NSStatusBar.system.removeStatusItem(item)
+        self.item = nil
+        // Written before `autosaveName` is set again, so macOS reads it.
+        UserDefaults.standard.set(Self.rescuePosition, forKey: Self.positionKey)
+        create()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.birthCheckDelay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let item = self.item else { return }
+                let sign = Self.evictionSign(item.button?.window)
+                Log.menuBar.info("chevron after rescue: \(sign ?? "visible", privacy: .public)")
             }
         }
     }
@@ -93,15 +162,21 @@ final class MenuBarChevron: NSObject {
         self.item = nil
         if let savedPosition { defaults.set(savedPosition, forKey: Self.positionKey) }
         resetEvictions()
+        MenuBarBand.shared.close()
         Log.menuBar.info("chevron removed")
     }
 
     // MARK: Click
 
     @objc private func clicked(_ sender: NSStatusBarButton) {
-        Log.menuBar.info("chevron clicked")
-        MenuBarOverflow.toggle { accepted in
-            Log.menuBar.info("chevron click result: \(accepted ? "accepted" : "refused", privacy: .public)")
+        if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+            Log.menuBar.info("chevron ⌥-clicked: native overflow")
+            MenuBarOverflow.toggle { accepted in
+                Log.menuBar.info("overflow toggle result: \(accepted ? "accepted" : "refused", privacy: .public)")
+            }
+        } else {
+            Log.menuBar.info("chevron clicked: band")
+            MenuBarBand.shared.toggle()
         }
     }
 
@@ -124,8 +199,14 @@ final class MenuBarChevron: NSObject {
 
     private func recalculate(reason: String) {
         guard let item else { return }
+        // Multitool holds the overflow open (relay, full scan): the bar is moving.
+        if MenuBarOverflow.heldOpen {
+            scheduleRecalculation(reason: "overflow held")
+            return
+        }
         let key = Self.screenConfigurationKey()
-        if key != screenKey {
+        let screensChanged = key != screenKey
+        if screensChanged {
             screenKey = key
             if evictions > 0 { Log.menuBar.info("screens changed: eviction count reset") }
             resetEvictions()
@@ -134,8 +215,20 @@ final class MenuBarChevron: NSObject {
         let current = item.length
         let window = item.button?.window
         // A glyph-length chevron can't be evicted for being too wide: no screen there
-        // only means it isn't placed yet.
-        if current > Self.glyphLength + Self.minimumChange, let sign = Self.evictionSign(window) {
+        // only means it isn't placed yet. A hidden bar (full screen, auto-hide, locked
+        // session) occludes the chevron without evicting it, and a screen change leaves
+        // it without a screen for a moment: neither counts.
+        let sign = current > Self.glyphLength + Self.minimumChange && Self.barShown && !screensChanged
+            ? Self.evictionSign(window) : nil
+        if sign == nil { suspectedEviction = false }
+        if let sign, !suspectedEviction {
+            suspectedEviction = true
+            Log.menuBar.info("chevron eviction suspected (\(sign, privacy: .public)): checking again")
+            scheduleRecalculation(reason: "eviction confirmation")
+            return
+        }
+        if let sign {
+            suspectedEviction = false
             evictions += 1
             if evictions > Self.maxEvictionRetries {
                 Log.menuBar.info("chevron evicted \(self.evictions) times (\(sign, privacy: .public)): back to the glyph length until the screens or the setting change")
@@ -179,11 +272,20 @@ final class MenuBarChevron: NSObject {
         guard let item else { return }
         item.length = length
         drawGlyph(length: length)
+        MenuBarInventory.shared.markStale("chevron length changed")
     }
 
     private func resetEvictions() {
         evictions = 0
         evictionCap = nil
+        suspectedEviction = false
+    }
+
+    /// False while the menu bar is hidden (full screen, auto-hide) or the session locked.
+    private static var barShown: Bool {
+        guard NSMenu.menuBarVisible() else { return false }
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return (session?["CGSSessionScreenIsLocked"] as? Bool) != true
     }
 
     /// Why the chevron looks evicted, nil if it looks in place. macOS 27 gives no proven
@@ -247,6 +349,15 @@ final class MenuBarChevron: NSObject {
         guard let window = item?.button?.window, object == ObjectIdentifier(window) else { return }
         let screen = window.screen.map { "\($0.frame)" } ?? "nil"
         Log.menuBar.info("chevron \(name.rawValue, privacy: .public): frame \(String(describing: window.frame), privacy: .public), screen \(screen, privacy: .public), occlusionState \(window.occlusionState.rawValue) (visible \(window.occlusionState.contains(.visible)))")
+        // macOS rewrites the preferred position after a ⌘-drag: a new place lifts the
+        // eviction cap, and the icons on each side changed.
+        let position = UserDefaults.standard.object(forKey: Self.positionKey) as? Double
+        if position != lastPosition {
+            lastPosition = position
+            if evictionCap != nil || evictions > 0 { Log.menuBar.info("chevron moved: eviction cap lifted") }
+            resetEvictions()
+            MenuBarInventory.shared.markStale("chevron moved")
+        }
         scheduleRecalculation(reason: name.rawValue)
     }
 

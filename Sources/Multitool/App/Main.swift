@@ -2,6 +2,39 @@ import AppKit
 
 @main
 enum Main {
+    /// Opens the overflow if needed to find the icon, then relays as the band would.
+    static func relayFromCommandLine(bundleID: String) -> Int32 {
+        guard Permissions.accessibility else { print("relay: Accessibilité absente"); return 1 }
+        let opened = MenuBarOverflow.openSync()
+        if case .failed(let cause) = opened { print("relay: déroulé : \(cause)") }
+        let found = MenuBarInventory.stableScan().items.first { $0.bundleID == bundleID }
+        MenuBarOverflow.closeIfHeldSync()
+        guard let item = found else { print("relay: aucune icône pour \(bundleID)"); return 1 }
+        print("relay: \(item.id), zone \(item.zone == .hidden ? "cachée" : "principale"), menu \(item.hasMenu ? "oui" : "non")")
+        Thread.sleep(forTimeInterval: 0.3)
+        let start = DispatchTime.now()
+        var code: Int32 = 0
+        MenuBarRelay.perform(item) { outcome in
+            switch outcome {
+            case .menu(let entries):
+                print("relay: menu redessiné, \(entries.count) entrées en \(MenuBarOverflow.elapsedMS(since: start)) ms")
+                for entry in entries {
+                    print(entry.isSeparator ? "  ───" : "  \(entry.checked ? "✓" : " ") \(entry.title)\(entry.enabled ? "" : " (inactive)")\(entry.submenu.isEmpty ? "" : " ▸ \(entry.submenu.count)")")
+                }
+            case .dispatched(let mode):
+                print("relay: \(mode) lancé en \(MenuBarOverflow.elapsedMS(since: start)) ms")
+            case .busy:
+                print("relay: un autre relais est en cours")
+                code = 1
+            case .failed(let cause):
+                print("relay: échec : \(cause)")
+                code = 1
+            }
+        }
+        print("relay: terminé en \(MenuBarOverflow.elapsedMS(since: start)) ms")
+        return code
+    }
+
     static func main() {
         // `--menubar-dump`: prints the menu bar inventory and exits, without starting the app.
         if CommandLine.arguments.contains("--menubar-dump") {
@@ -10,7 +43,8 @@ enum Main {
                 let zone = item.zone == .main ? "main  " : "hidden"
                 let x = String(format: "%7.1f", item.frame.minX)
                 let width = String(format: "%6.1f", item.frame.width)
-                print("\(zone)  \(x)  \(width)  \(item.appName)  \(item.label)\(item.isSystem ? "  [système]" : "")")
+                let menu = item.hasMenu ? "menu " : "     "
+                print("\(zone)  \(x)  \(width)  \(menu) \(item.appName)  \(item.label)\(item.isSystem ? "  [système]" : "")")
             }
             let open = items.contains { $0.zone == .hidden }
             print("indicateur: \(indicator == nil ? "absent" : "présent"), déroulé: \(open ? "ouvert" : "fermé"), total: \(items.count)")
@@ -39,6 +73,12 @@ enum Main {
             }
             print("toggle: ok")
             exit(0)
+        }
+        // `--menubar-relay <bundleID>`: relays a click to that app's first icon, without
+        // starting the app. The redrawn menu needs the app: its entries are only printed.
+        if let i = CommandLine.arguments.firstIndex(of: "--menubar-relay") {
+            guard CommandLine.arguments.indices.contains(i + 1) else { print("relay: bundle ID manquant"); exit(64) }
+            exit(relayFromCommandLine(bundleID: CommandLine.arguments[i + 1]))
         }
         let app = NSApplication.shared
         let delegate = AppDelegate()

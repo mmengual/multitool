@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowMover: WindowMover?
     private let popover = NSPopover()
     private var popoverMonitor: Any?
+    /// Invisible window the popover hangs from when our icon is evicted and the band shows it.
+    private var popoverAnchor: NSWindow?
     private var permissionTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -177,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        MenuBarInventory.ownStatusItem = statusItem
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "wrench.and.screwdriver",
                                    accessibilityDescription: "Multitool")
@@ -199,8 +202,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.isShown ? closePopover() : showPopover(from: sender)
     }
 
+    /// Our icon is evicted and was clicked in the band: the popover opens under the
+    /// band's cell (`rect` in screen coordinates), not under the hidden button.
+    func showPopover(anchoredAt rect: NSRect) {
+        closePopover()
+        let anchor = popoverAnchor ?? NSWindow(contentRect: rect, styleMask: [.borderless],
+                                                backing: .buffered, defer: false)
+        anchor.isReleasedWhenClosed = false
+        anchor.backgroundColor = .clear
+        anchor.isOpaque = false
+        anchor.ignoresMouseEvents = true
+        anchor.level = .statusBar
+        anchor.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        anchor.setFrame(rect, display: false)
+        anchor.orderFront(nil)
+        popoverAnchor = anchor
+        guard let view = anchor.contentView else { return }
+        presentPopover(relativeTo: view.bounds, of: view)
+    }
+
     private func showPopover(from button: NSStatusBarButton) {
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        presentPopover(relativeTo: button.bounds, of: button)
+    }
+
+    private func presentPopover(relativeTo rect: NSRect, of view: NSView) {
+        popover.show(relativeTo: rect, of: view, preferredEdge: .minY)
         // An .accessory app doesn't take focus on its own: bring it forward
         // so the SwiftUI controls get their events.
         NSApp.activate(ignoringOtherApps: true)
@@ -214,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func closePopover() {
         popover.performClose(nil)
+        popoverAnchor?.orderOut(nil)
         if let monitor = popoverMonitor {
             NSEvent.removeMonitor(monitor)
             popoverMonitor = nil

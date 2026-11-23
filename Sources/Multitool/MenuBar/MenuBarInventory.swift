@@ -9,17 +9,24 @@ struct MenuBarItem: Identifiable, Equatable {
     let appName: String
     let bundleID: String
     let pid: pid_t
+    let index: Int          // index among the children of the app's AXExtrasMenuBar
     let label: String       // readable label, may be empty
     let frame: CGRect       // global AX coordinates (origin at the top left)
     let isSystem: Bool      // owned by MenuBarAgent, Control Center or SystemUIServer
     let isOverflowIndicator: Bool // AXIdentifier "menu-bar-overflow-indicator", "-expanded" when open
+    var isExpanded = false  // the indicator only: its identifier ends with "-expanded"
+    let hasMenu: Bool       // an AXMenu child: AppKit opens it without running the app's code
     var zone: Zone
 }
 
-/// Read-only inventory of the menu bar icons. It never acts on the bar: no click,
-/// no AXPress, no synthetic event, no status item.
-/// `@unchecked Sendable`: its state is only read and written on the main thread
-/// (`refresh()` is main actor, the background scan publishes through the main queue).
+/// Inventory of the menu bar icons.
+///
+/// The light scan (`refresh()`) only reads: no press, no event. Overflow closed, an
+/// evicted app loses its whole `AXExtrasMenuBar` (measured on macOS 27.2), so the
+/// evicted icons are only known from a full scan (`fullScan`), which opens the native
+/// overflow. The result is kept in `evicted`, the cache the band draws.
+///
+/// `@unchecked Sendable`: its state is only read and written on the main thread.
 final class MenuBarInventory: ObservableObject, @unchecked Sendable {
     static let shared = MenuBarInventory()
 
@@ -29,6 +36,17 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
     @Published private(set) var overflowIndicator: MenuBarItem?
     @Published private(set) var overflowOpen = false
     @Published private(set) var lastScan: Date?
+
+    /// Icons left of the indicator at the last full scan, corrected by the light scans.
+    @Published private(set) var evicted: [MenuBarItem] = []
+    /// Date of the last full scan, nil before the first one.
+    @Published private(set) var lastFullScan: Date?
+    /// The cache may miss icons: the next band opening runs a full scan.
+    @Published private(set) var cacheStale = true
+
+    /// Multitool's main status item, set by `AppDelegate`: its window is the only one
+    /// read for our own icon (the other `NSStatusBarWindow`s gave fake icons).
+    @MainActor static weak var ownStatusItem: NSStatusItem?
 
     static let systemBundleIDs: Set<String> = [
         "com.apple.MenuBarAgent", "com.apple.controlcenter", "com.apple.systemuiserver",
@@ -42,37 +60,159 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
     }
 
     private var scanning = false   // main thread only
+    /// Bundle IDs of the visible third-party icons at the last scan, for the stale rules.
+    private var lastVisible: Set<String> = []
+    private var observers: [NSObjectProtocol] = []
 
-    /// Starts a background scan and publishes on the main thread. Ignored while one runs.
+    private init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                            object: nil, queue: .main) { [weak self] _ in
+            self?.markStale("screens changed")
+        })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.evicted.removeAll { $0.pid == app.processIdentifier }
+        })
+    }
+
+    /// The next band opening runs a full scan. Main thread.
+    func markStale(_ reason: String) {
+        guard !cacheStale else { return }
+        cacheStale = true
+        Log.menuBar.info("evicted cache stale: \(reason, privacy: .public)")
+    }
+
+    // MARK: Light scan
+
+    /// Starts a background light scan and publishes on the main thread. Ignored while
+    /// one runs, and while Multitool holds the overflow open (a relay is moving the bar).
     @MainActor
-    func refresh() {
-        dispatchPrecondition(condition: .onQueue(.main))
-        guard !scanning else { return }
+    func refresh(completion: (@MainActor () -> Void)? = nil) {
+        guard !scanning, !MenuBarOverflow.heldOpen else { completion?(); return }
         guard Permissions.accessibility else {
             publish(items: [], indicator: nil)
+            completion?()
             return
         }
         scanning = true
-        // Multitool's own icon is read here, from its window: querying our own process
-        // through AX from a background thread serves the request in-process on that
-        // thread, which crashed before.
+        // Multitool's own icon is read here, on the main thread: querying our own
+        // process through AX from a background thread crashed before.
         let own = Self.ownItems()
         DispatchQueue.global(qos: .utility).async {
             let result = Self.scan()
-            let found = result.items + own
             DispatchQueue.main.async {
-                self.scanning = false
-                self.publish(items: found, indicator: result.indicator)
+                MainActor.assumeIsolated {
+                    self.scanning = false
+                    self.publish(items: result.items + own, indicator: result.indicator)
+                    completion?()
+                }
             }
         }
     }
 
+    // MARK: Full scan
+
+    /// Opens the overflow if needed, waits until the bar is stable, reads every icon,
+    /// then closes the overflow if Multitool opened it. Fills `evicted`.
+    /// `completion` runs on the main thread, with nil or the cause of the failure.
+    @MainActor
+    func fullScan(completion: @escaping @MainActor (String?) -> Void) {
+        guard Permissions.accessibility else { completion("Accessibilité absente"); return }
+        let start = DispatchTime.now()
+        MenuBarOverflow.queue.async {
+            if case .failed(let cause) = MenuBarOverflow.openSync() {
+                DispatchQueue.main.async { MainActor.assumeIsolated { completion(cause) } }
+                return
+            }
+            let result = Self.stableScan()
+            // Our own icon is read on the main thread, overflow still open: evicted,
+            // it is only on screen now.
+            let own: [MenuBarItem] = DispatchQueue.main.sync {
+                MainActor.assumeIsolated { Self.ownItems() }
+            }
+            MenuBarOverflow.closeIfHeldSync()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let (list, _) = Self.assignZones(result.items + own, indicator: result.indicator)
+                    self.evicted = list.filter { $0.zone == .hidden }
+                    self.lastFullScan = Date()
+                    self.cacheStale = false
+                    self.lastVisible = Self.visibleKeys(list.filter { $0.zone == .main })
+                    Log.menuBar.info("full scan: \(self.evicted.count) evicted icons in \(MenuBarOverflow.elapsedMS(since: start)) ms")
+                    completion(nil)
+                }
+            }
+        }
+    }
+
+    /// Scans until 2 reads 20 ms apart agree, `readableTimeout` at most. Off the main thread.
+    static func stableScan() -> (items: [MenuBarItem], indicator: MenuBarItem?) {
+        let deadline = Date().addingTimeInterval(MenuBarOverflow.readableTimeout)
+        var previous = scan()
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+            let next = scan()
+            if signature(next.items) == signature(previous.items) { return next }
+            previous = next
+        }
+        return previous
+    }
+
+    private static func signature(_ items: [MenuBarItem]) -> [String] {
+        items.map { "\($0.id)@\(Int($0.frame.minX))" }
+    }
+
+    private static func visibleKeys(_ items: [MenuBarItem]) -> Set<String> {
+        Set(items.filter { !$0.isSystem }.map(\.bundleID))
+    }
+
+    // MARK: Publish
+
+    @MainActor
     private func publish(items found: [MenuBarItem], indicator: MenuBarItem?) {
-        let (list, open) = Self.assignZones(found, indicator: indicator)
+        let (list, _) = Self.assignZones(found, indicator: indicator)
+        // Open is what the indicator says, not "an icon left of it": during the closing
+        // animation, or with a misplaced frame, icons can sit left of a closed indicator.
+        let open = indicator?.isExpanded ?? false
         items = list
         overflowIndicator = indicator
         overflowOpen = open
         lastScan = Date()
+        updateCache(list: list, indicator: indicator, open: open)
+    }
+
+    /// Light scan → cache. Without an indicator nothing is evicted. Overflow open, the
+    /// scan sees everything: it is as good as a full scan. Overflow closed, the stale
+    /// rules apply: no icon-by-icon correction, `#index` differs between the 2 states.
+    @MainActor
+    private func updateCache(list: [MenuBarItem], indicator: MenuBarItem?, open: Bool) {
+        let visible = Self.visibleKeys(list.filter { $0.zone == .main })
+        defer { lastVisible = visible }
+        guard indicator != nil else {
+            evicted = []
+            lastFullScan = Date()
+            cacheStale = false
+            return
+        }
+        if open {
+            evicted = list.filter { $0.zone == .hidden }
+            lastFullScan = Date()
+            cacheStale = false
+            return
+        }
+        evicted.removeAll { NSRunningApplication(processIdentifier: $0.pid) == nil }
+        if lastFullScan == nil { cacheStale = true; return }
+        let known = lastVisible.union(evicted.map(\.bundleID))
+        if let newcomer = visible.subtracting(known).first {
+            markStale("new icon \(newcomer)")
+        } else if let gone = lastVisible.subtracting(visible).subtracting(evicted.map(\.bundleID)).first(where: { bundleID in
+            // An app with one icon evicted loses all of them overflow closed: excluded.
+            !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+        }) {
+            markStale("icon left the visible bar: \(gone)")
+        }
     }
 
     /// Sorts by `minX` and marks as hidden the icons left of the overflow indicator.
@@ -89,24 +229,23 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         return (list, open)
     }
 
-    /// Multitool's own status item windows, in top-left origin coordinates, the chevron
-    /// excluded: it is a separator, not an icon.
+    /// Multitool's main status item, in top-left origin coordinates, only when its
+    /// window is on a screen and visible. The chevron is a separator, not an icon.
     @MainActor
-    private static func ownItems() -> [MenuBarItem] {
-        guard let screenHeight = NSScreen.screens.first?.frame.height else { return [] }
+    static func ownItems() -> [MenuBarItem] {
+        guard let screenHeight = NSScreen.screens.first?.frame.height,
+              let window = ownStatusItem?.button?.window,
+              window.screen != nil, window.occlusionState.contains(.visible) else { return [] }
         let bundleID = Bundle.main.bundleIdentifier ?? "com.mmengual.multitool"
-        let chevron = MenuBarChevron.shared.windowNumber
-        let windows = NSApp.windows.filter {
-            $0.className.contains("NSStatusBarWindow") && $0.windowNumber != chevron
-        }
-        return windows.enumerated().map { index, window in
-            let f = window.frame
-            let frame = CGRect(x: f.minX, y: screenHeight - f.maxY, width: f.width, height: f.height)
-            return MenuBarItem(id: "\(bundleID)#\(index)", appName: "Multitool", bundleID: bundleID,
-                               pid: ProcessInfo.processInfo.processIdentifier, label: "Multitool",
-                               frame: frame, isSystem: false, isOverflowIndicator: false, zone: .main)
-        }
+        let f = window.frame
+        let frame = CGRect(x: f.minX, y: screenHeight - f.maxY, width: f.width, height: f.height)
+        return [MenuBarItem(id: "\(bundleID)#0", appName: "Multitool", bundleID: bundleID,
+                            pid: ProcessInfo.processInfo.processIdentifier, index: 0, label: "Multitool",
+                            frame: frame, isSystem: false, isOverflowIndicator: false, isExpanded: false, hasMenu: false,
+                            zone: .main)]
     }
+
+    // MARK: AX scan
 
     /// Synchronous scan of every other running app. Call off the main thread.
     /// Multitool's own icon is not included (see `refresh()`).
@@ -118,43 +257,69 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         for app in NSWorkspace.shared.runningApplications {
             let pid = app.processIdentifier
             if pid == ownPID || pid <= 0 { continue }
-            let element = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(element, 0.3)
-
-            var barRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &barRef) == .success,
-                  let barRef, CFGetTypeID(barRef) == AXUIElementGetTypeID() else { continue }
-            let bar = barRef as! AXUIElement
-            AXUIElementSetMessagingTimeout(bar, 0.3)
-
-            var childrenRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(bar, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-                  let children = childrenRef as? [AXUIElement] else { continue }
+            let children = barChildren(pid: pid)
+            if children.isEmpty { continue }
 
             let bundleID = app.bundleIdentifier ?? "pid\(pid)"
             let appName = app.localizedName ?? bundleID
             for (index, child) in children.enumerated() {
-                AXUIElementSetMessagingTimeout(child, 0.3)
-                guard let origin = point(child, kAXPositionAttribute),
-                      let size = size(child, kAXSizeAttribute) else { continue }
-                let identifier = string(child, kAXIdentifierAttribute)
-                let label = readableLabel(child, depth: 2)
-                let item = MenuBarItem(
-                    id: "\(bundleID)#\(index)", appName: appName, bundleID: bundleID, pid: pid,
-                    label: label.replacingOccurrences(of: "\r\n", with: " ")
-                        .replacingOccurrences(of: "\n", with: " ")
-                        .replacingOccurrences(of: "\r", with: " "),
-                    frame: CGRect(origin: origin, size: size),
-                    isSystem: systemBundleIDs.contains(bundleID),
-                    isOverflowIndicator: isOverflowIdentifier(identifier),
-                    zone: .main)
+                guard let item = item(child, index: index, app: app, bundleID: bundleID, appName: appName)
+                else { continue }
                 if item.isOverflowIndicator { indicator = item } else { found.append(item) }
             }
         }
         return (assignZones(found, indicator: indicator).items, indicator)
     }
 
+    /// Children of the app's `AXExtrasMenuBar`, empty when it has none.
+    static func barChildren(pid: pid_t) -> [AXUIElement] {
+        let element = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        var barRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &barRef) == .success,
+              let barRef, CFGetTypeID(barRef) == AXUIElementGetTypeID() else { return [] }
+        let bar = barRef as! AXUIElement
+        AXUIElementSetMessagingTimeout(bar, 0.3)
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(bar, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else { return [] }
+        children.forEach { AXUIElementSetMessagingTimeout($0, 0.3) }
+        return children
+    }
+
+    private static func item(_ child: AXUIElement, index: Int, app: NSRunningApplication,
+                             bundleID: String, appName: String) -> MenuBarItem? {
+        guard let origin = point(child, kAXPositionAttribute),
+              let size = size(child, kAXSizeAttribute) else { return nil }
+        let identifier = string(child, kAXIdentifierAttribute)
+        let label = readableLabel(child, depth: 2)
+        return MenuBarItem(
+            id: "\(bundleID)#\(index)", appName: appName, bundleID: bundleID, pid: app.processIdentifier,
+            index: index,
+            label: label.replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " "),
+            frame: CGRect(origin: origin, size: size),
+            isSystem: systemBundleIDs.contains(bundleID),
+            isOverflowIndicator: isOverflowIdentifier(identifier),
+            isExpanded: identifier.hasSuffix("-expanded"),
+            hasMenu: menu(of: child) != nil,
+            zone: .main)
+    }
+
     // MARK: AX helpers
+
+    /// The `AXMenu` child of a menu bar icon or of a menu entry, nil without one.
+    static func menu(of element: AXUIElement) -> AXUIElement? {
+        children(element).first { string($0, kAXRoleAttribute) == "AXMenu" }
+    }
+
+    static func children(_ element: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &ref) == .success
+        else { return [] }
+        return (ref as? [AXUIElement]) ?? []
+    }
 
     /// Description, title or help of the element, else of its first descendant that has
     /// one. The system items (clock, Wi-Fi…) carry their name one or two levels down.
@@ -164,10 +329,7 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
             if !value.isEmpty { return value }
         }
         guard depth > 0 else { return "" }
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &ref) == .success,
-              let children = ref as? [AXUIElement] else { return "" }
-        for child in children.prefix(4) {
+        for child in children(element).prefix(4) {
             let value = readableLabel(child, depth: depth - 1)
             if !value.isEmpty { return value }
         }
@@ -178,6 +340,12 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return "" }
         return (ref as? String) ?? ""
+    }
+
+    static func bool(_ element: AXUIElement, _ attribute: String) -> Bool? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return nil }
+        return (ref as? Bool) ?? (ref as? NSNumber)?.boolValue
     }
 
     static func point(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
@@ -194,5 +362,11 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
               let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
         var value = CGSize.zero
         return AXValueGetValue(ref as! AXValue, .cgSize, &value) ? value : nil
+    }
+
+    static func frame(_ element: AXUIElement) -> CGRect? {
+        guard let origin = point(element, kAXPositionAttribute),
+              let size = size(element, kAXSizeAttribute) else { return nil }
+        return CGRect(origin: origin, size: size)
     }
 }
