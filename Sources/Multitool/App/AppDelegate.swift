@@ -151,6 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyWindowMoverState() } }
             .store(in: &cancellables)
+
+        // The chevron doesn't need the Accessibility permission, only its click does.
+        settings.$menuBarEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { enabled in enabled ? MenuBarChevron.shared.start() : MenuBarChevron.shared.stop() }
+            .store(in: &cancellables)
     }
 
     // Published values are read after the change lands (hence the async hop above).

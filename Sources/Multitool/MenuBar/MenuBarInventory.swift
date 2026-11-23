@@ -12,13 +12,15 @@ struct MenuBarItem: Identifiable, Equatable {
     let label: String       // readable label, may be empty
     let frame: CGRect       // global AX coordinates (origin at the top left)
     let isSystem: Bool      // owned by MenuBarAgent, Control Center or SystemUIServer
-    let isOverflowIndicator: Bool // AXIdentifier == "menu-bar-overflow-indicator"
+    let isOverflowIndicator: Bool // AXIdentifier "menu-bar-overflow-indicator", "-expanded" when open
     var zone: Zone
 }
 
 /// Read-only inventory of the menu bar icons. It never acts on the bar: no click,
 /// no AXPress, no synthetic event, no status item.
-final class MenuBarInventory: ObservableObject {
+/// `@unchecked Sendable`: its state is only read and written on the main thread
+/// (`refresh()` is main actor, the background scan publishes through the main queue).
+final class MenuBarInventory: ObservableObject, @unchecked Sendable {
     static let shared = MenuBarInventory()
 
     /// Sorted by `frame.minX`, the native overflow indicator excluded.
@@ -28,14 +30,21 @@ final class MenuBarInventory: ObservableObject {
     @Published private(set) var overflowOpen = false
     @Published private(set) var lastScan: Date?
 
-    private static let systemBundleIDs: Set<String> = [
+    static let systemBundleIDs: Set<String> = [
         "com.apple.MenuBarAgent", "com.apple.controlcenter", "com.apple.systemuiserver",
     ]
-    private static let overflowIdentifier = "menu-bar-overflow-indicator"
+    static let overflowIdentifier = "menu-bar-overflow-indicator"
+
+    /// Closed, the indicator is "menu-bar-overflow-indicator". Open, it becomes
+    /// "menu-bar-overflow-indicator-expanded" (measured on macOS 27.2.1), same frame.
+    static func isOverflowIdentifier(_ identifier: String) -> Bool {
+        identifier == overflowIdentifier || identifier == overflowIdentifier + "-expanded"
+    }
 
     private var scanning = false   // main thread only
 
     /// Starts a background scan and publishes on the main thread. Ignored while one runs.
+    @MainActor
     func refresh() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard !scanning else { return }
@@ -80,11 +89,16 @@ final class MenuBarInventory: ObservableObject {
         return (list, open)
     }
 
-    /// Multitool's own status item windows, in top-left origin coordinates. Main thread.
+    /// Multitool's own status item windows, in top-left origin coordinates, the chevron
+    /// excluded: it is a separator, not an icon.
+    @MainActor
     private static func ownItems() -> [MenuBarItem] {
         guard let screenHeight = NSScreen.screens.first?.frame.height else { return [] }
         let bundleID = Bundle.main.bundleIdentifier ?? "com.mmengual.multitool"
-        let windows = NSApp.windows.filter { $0.className.contains("NSStatusBarWindow") }
+        let chevron = MenuBarChevron.shared.windowNumber
+        let windows = NSApp.windows.filter {
+            $0.className.contains("NSStatusBarWindow") && $0.windowNumber != chevron
+        }
         return windows.enumerated().map { index, window in
             let f = window.frame
             let frame = CGRect(x: f.minX, y: screenHeight - f.maxY, width: f.width, height: f.height)
@@ -132,7 +146,7 @@ final class MenuBarInventory: ObservableObject {
                         .replacingOccurrences(of: "\r", with: " "),
                     frame: CGRect(origin: origin, size: size),
                     isSystem: systemBundleIDs.contains(bundleID),
-                    isOverflowIndicator: identifier == overflowIdentifier,
+                    isOverflowIndicator: isOverflowIdentifier(identifier),
                     zone: .main)
                 if item.isOverflowIndicator { indicator = item } else { found.append(item) }
             }
@@ -144,7 +158,7 @@ final class MenuBarInventory: ObservableObject {
 
     /// Description, title or help of the element, else of its first descendant that has
     /// one. The system items (clock, Wi-Fi…) carry their name one or two levels down.
-    private static func readableLabel(_ element: AXUIElement, depth: Int) -> String {
+    static func readableLabel(_ element: AXUIElement, depth: Int) -> String {
         for attribute in [kAXDescriptionAttribute, kAXTitleAttribute, kAXHelpAttribute] {
             let value = string(element, attribute)
             if !value.isEmpty { return value }
@@ -160,13 +174,13 @@ final class MenuBarInventory: ObservableObject {
         return ""
     }
 
-    private static func string(_ element: AXUIElement, _ attribute: String) -> String {
+    static func string(_ element: AXUIElement, _ attribute: String) -> String {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return "" }
         return (ref as? String) ?? ""
     }
 
-    private static func point(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
+    static func point(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success,
               let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
@@ -174,7 +188,7 @@ final class MenuBarInventory: ObservableObject {
         return AXValueGetValue(ref as! AXValue, .cgPoint, &value) ? value : nil
     }
 
-    private static func size(_ element: AXUIElement, _ attribute: String) -> CGSize? {
+    static func size(_ element: AXUIElement, _ attribute: String) -> CGSize? {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success,
               let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuBarPane: View {
     @ObservedObject private var inventory = MenuBarInventory.shared
+    @ObservedObject private var settings = Settings.shared
     @State private var accessibility = Permissions.accessibility
 
     var body: some View {
@@ -23,7 +24,9 @@ struct MenuBarPane: View {
                 rows(for: inventory.items.filter { $0.zone == .main })
             }
 
-            OrbeSection(title: "Barre cachée") {
+            OrbeSection(title: "Barre cachée",
+                        note: settings.menuBarEnabled
+                            ? "Glissez le chevron avec ⌘ : tout ce qui est à sa gauche est caché." : nil) {
                 let hidden = inventory.items.filter { $0.zone == .hidden }
                 if !hidden.isEmpty {
                     rows(for: hidden)

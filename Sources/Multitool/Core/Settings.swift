@@ -48,6 +48,13 @@ final class Settings: ObservableObject {
         didSet { defaults.set(monitorEnabled, forKey: "monitor.enabled") }
     }
 
+    // MARK: Menu Bar
+
+    /// Shows the chevron that hides the icons on its left. Off by default.
+    @Published var menuBarEnabled: Bool = false {
+        didSet { defaults.set(menuBarEnabled, forKey: "menuBar.enabled") }
+    }
+
     @Published var clipboardEnabled: Bool = true {
         didSet { defaults.set(clipboardEnabled, forKey: "clipboard.enabled") }
     }
@@ -103,6 +110,7 @@ final class Settings: ObservableObject {
            let b = MouseButton(rawValue: v) { resizeButton = b }
 
         if let v = defaults.object(forKey: "monitor.enabled") as? Bool { monitorEnabled = v }
+        if let v = defaults.object(forKey: "menuBar.enabled") as? Bool { menuBarEnabled = v }
         if let v = defaults.object(forKey: "clipboard.enabled") as? Bool { clipboardEnabled = v }
         if defaults.object(forKey: "clipboard.hotKey") != nil {
             // A stored `null` means the user cleared the shortcut on purpose.

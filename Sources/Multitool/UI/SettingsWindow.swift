@@ -254,6 +254,7 @@ struct ModuleHeaderToggle: View {
         case .windowMover: return $settings.windowMoverEnabled
         case .clipboard: return $settings.clipboardEnabled
         case .monitor: return $settings.monitorEnabled
+        case .menuBar: return $settings.menuBarEnabled
         default: return nil
         }
     }

@@ -144,21 +144,27 @@ Questions ouvertes :
 - Seuils des anomalies : valeurs par défaut à ajuster à l'usage.
 - Faut-il garder un historique plus long sur disque, pour retrouver le pic d'hier ?
 
-## 3. Menu Bar (déroulé natif de macOS piloté par Multitool)
+## 3. Menu Bar (icônes cachées affichées dans une bande sous la barre)
 
-**Besoin** : choisir, icône par icône, ce qui reste dans la barre des menus et ce
-qui passe dans une zone cachée, et dérouler cette zone d'un geste.
+**Besoin** : choisir, icône par icône, ce qui reste dans la barre des menus, ce
+qui passe dans une barre cachée et ce qui disparaît, sans jamais glisser une
+icône à la main. La barre de Maxime est saturée : l'encoche cache déjà des icônes.
 
 Comportement visé :
 - Une page de réglages liste toutes les icônes de la barre avec leur application.
-- Chaque icône a un état : **Barre principale** (par défaut) ou **Barre cachée**.
-  Un troisième état, **Masquée**, est voulu mais n'a pas encore de mécanisme
-  (voir les questions ouvertes).
-- La barre cachée se déroule de 2 façons, au choix dans les réglages :
-  - au clic sur un chevron dédié, qui marque aussi la frontière entre les 2 zones ;
-  - au survol du coin haut droit de l'écran.
-- Une fois déroulée, elle reste tant que la souris est dans la barre des menus.
-  Elle se referme dès que la souris en sort.
+- Chaque icône a 2 cases : **Barre cachée** et **Masquée**. Sans case cochée, elle
+  reste dans la **barre principale**. Multitool déplace l'icône lui-même.
+- La barre cachée est une **bande dessinée par Multitool sous la barre des menus**,
+  alignée à droite, sous l'horloge. Elle n'est pas à gauche de l'encoche.
+- La bande montre l'icône de l'application, pas l'icône d'état : image fixe, sans
+  pastille ni texte. Aucune permission nouvelle.
+- Un clic sur une icône de la bande ouvre le vrai menu de l'icône.
+- Une icône **Masquée** est évincée comme les autres, et la bande ne la dessine
+  pas. Elle reste visible si on ouvre le déroulé natif de macOS à la main.
+- La bande s'ouvre de 2 façons, au choix dans les réglages : au clic sur un chevron
+  dédié, ou au survol du coin haut droit de l'écran.
+- Une fois ouverte, elle reste tant que la souris est dans la barre ou dans la
+  bande. Elle se referme dès que la souris en sort.
 - L'horloge et le Centre de contrôle restent dans la barre principale : macOS ne
   permet pas de les déplacer.
 
@@ -170,33 +176,50 @@ Mesuré le 22 novembre 2026 sur macOS 27.2.1, écran du MacBook seul :
 |---|---|
 | La barre est dessinée par un seul processus, `MenuBarAgent`. Les icônes n'ont plus de fenêtre propre. | La méthode d'Ice (lister les fenêtres par `CGWindowList`, capturer chaque icône) ne marche plus. |
 | L'Accessibilité rend chaque icône visible avec son app, sa position et sa largeur (`AXExtrasMenuBar`). | L'inventaire ne demande aucune nouvelle permission. |
-| Quand la place manque, macOS évince les icônes les plus à gauche vers son propre débordement. | Un séparateur de largeur calibrée masque les icônes à sa gauche. Testé : 330 points évincent 8 icônes. |
-| Un séparateur trop large (10 000 points) est évincé seul et ne masque rien. | La largeur doit suivre la place libre, qui bouge quand une icône change de largeur. |
-| L'indicateur natif (`menu-bar-overflow-indicator`) répond à `AXPress`. Les vraies icônes évincées s'affichent alors à gauche de l'encoche, à la place des menus de l'app. | Multitool ouvre et ferme le déroulé natif. Pas de copie d'icône, pas de clic relayé, pas de permission Enregistrement de l'écran. |
-| Déroulé fermé, les icônes évincées sortent de l'Accessibilité. | Une bande dessinée par Multitool sous la barre a été écartée : elle ne pourrait ni photographier ces icônes ni cliquer dessus. |
+| Quand la place manque, macOS évince les icônes les plus à gauche vers son propre débordement. | Un séparateur de largeur calibrée masque les icônes à sa gauche. |
+| Un séparateur trop large est évincé seul et ne masque rien. | Règle prouvée à l'écran : le chevron va de son bord droit au bord droit de l'encoche, moins 48 points pour l'indicateur natif. |
+| La fenêtre du chevron suit sa place réelle, et elle est marquée non visible (`occlusionState`) quand macOS l'évince. | Multitool détecte l'éviction du chevron et le rétrécit par pas de 20 points. |
+| L'indicateur natif répond à `AXPress`. Son identifiant est `menu-bar-overflow-indicator` fermé et `menu-bar-overflow-indicator-expanded` ouvert. | Multitool ouvre et ferme le déroulé natif, et sait dans quel état il est. Ouvert par `AXPress`, il ne se referme pas seul. |
+| Déroulé fermé, les icônes évincées sortent de l'Accessibilité. | Multitool ne peut ni les photographier ni les presser sans ouvrir le déroulé. |
+| Déroulé ouvert, une icône évincée accepte `AXPress` : son menu s'ouvre sous sa place réelle, à gauche de l'encoche. `AXCancel` sur le menu le referme. | Le clic relayé depuis la bande est possible. Le menu ne s'ouvre pas sous la bande. |
+| Une icône créée dans une barre saturée naît dans le déroulé, donc invisible. | Le chevron doit être amené dans la barre visible à la première activation. |
 | Un glisser `⌘` simulé déplace une icône, dans les 2 sens. | C'est le moyen de ranger une icône dans une zone. Le curseur est pris moins d'une seconde. |
 
-Décision du 22 novembre 2026 : Multitool pilote le déroulé natif. La bande sous la
-barre est abandonnée.
+Décisions du 22 novembre 2026 :
+- Matin : Multitool pilote le déroulé natif, la bande sous la barre est abandonnée
+  (les icônes cachées semblaient hors d'atteinte).
+- Soir, après l'essai à l'écran du lot 2 : la bande revient. Le déroulé natif à
+  gauche de l'encoche ne convient pas sur une barre saturée, et le clic relayé est
+  prouvé. Le déroulé natif reste le mécanisme, la bande en est la façade.
+- La bande affiche l'icône de l'application, sans permission Enregistrement de
+  l'écran.
 
 ### Découpage
 
-1. **Inventaire, lecture seule** : page de réglages avec les icônes, leur app et
-   leur zone actuelle.
-2. **Chevron et masquage** : le chevron séparateur, sa largeur calibrée, le clic
-   qui ouvre et ferme le déroulé natif.
-3. **Classement** : choisir la zone d'une icône dans les réglages, Multitool la
-   déplace par glisser `⌘` simulé. Une nouvelle icône arrive en barre principale.
-4. **Survol** : ouverture par le coin haut droit, fermeture à la sortie de la barre.
+1. **Inventaire, lecture seule** (fait) : page de réglages avec les icônes, leur
+   app et leur zone actuelle.
+2. **Chevron et masquage** (écrit, vu à l'écran) : le chevron séparateur, sa
+   largeur calibrée, le clic qui ouvre et ferme le déroulé natif. Reste à
+   corriger : le chevron naît invisible sur une barre saturée, le clic refusé ne
+   dit rien, la page affiche de faux « Multitool » cachés.
+3. **Bande** : la fenêtre sous l'horloge, les icônes d'application, le clic
+   relayé. Le chevron ouvre la bande au lieu du déroulé natif.
+4. **Classement** : les 2 cases par icône, Multitool déplace l'icône par glisser
+   `⌘` simulé. Une nouvelle icône arrive en barre principale.
+5. **Survol** : ouverture par le coin haut droit, fermeture à la sortie de la
+   barre et de la bande.
 
 Questions ouvertes :
-- État **Masquée** : aucun mécanisme prouvé, tout ce qui est évincé réapparaît
-  dans le déroulé natif. Piste non testée : le réglage macOS qui autorise ou non
-  une app dans la barre des menus.
-- Écran externe, sans encoche : non testé.
-- Délais : le masquage a mis entre 1 et 3 secondes à se voir. Le délai d'ouverture
-  et de fermeture du déroulé natif reste à mesurer.
-- Règle de calibrage de la largeur du séparateur.
+- Clic relayé : prouvé sur une icône à menu (Teleport Connect). Non testé sur une
+  icône qui ouvre une fenêtre ou un popover (Teams).
+- Le menu s'ouvre à gauche de l'encoche, loin de la bande. Piste : lire les
+  entrées du menu par l'Accessibilité et les redessiner sous la bande.
+- Délai entre le clic dans la bande et l'apparition du menu : non mesuré.
+- Écran externe, sans encoche : aucun masquage aujourd'hui, non testé.
+- Identifiant stable d'une icône, nécessaire au classement : l'inventaire numérote
+  par position.
+- L'icône de Multitool devient noire quand le moniteur signale une anomalie : la
+  teinte d'alerte ne sort pas en couleur sur macOS 27.
 
 ## 4. Screenshot (dans l'esprit de Shottr)
 
