@@ -247,44 +247,75 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
 
     // MARK: AX scan
 
-    /// Synchronous scan of every other running app. Call off the main thread.
-    /// Multitool's own icon is not included (see `refresh()`).
+    /// Apps that didn't answer within the AX timeout, skipped until the date. Measured
+    /// on 23/11: 3 of 155 apps (web content processes) cost 300 ms each, and none
+    /// has a menu bar icon. Any thread, under `unresponsiveLock`.
+    private static var unresponsive: [pid_t: Date] = [:]
+    private static let unresponsiveLock = NSLock()
+    private static let unresponsiveDelay: TimeInterval = 60
+
+    /// Synchronous scan of every other running app, in parallel. Call off the main
+    /// thread. Multitool's own icon is not included (see `refresh()`). Background-only
+    /// apps are skipped: none of the 63 measured on 23/11 had a menu bar icon.
     static func scan() -> (items: [MenuBarItem], indicator: MenuBarItem?) {
         let ownPID = ProcessInfo.processInfo.processIdentifier
-        var found: [MenuBarItem] = []
-        var indicator: MenuBarItem?
+        let now = Date()
+        unresponsiveLock.lock()
+        unresponsive = unresponsive.filter { $0.value > now }
+        let skipped = Set(unresponsive.keys)
+        unresponsiveLock.unlock()
 
-        for app in NSWorkspace.shared.runningApplications {
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            $0.processIdentifier > 0 && $0.processIdentifier != ownPID
+                && $0.activationPolicy != .prohibited && !skipped.contains($0.processIdentifier)
+        }
+        var perApp = [[MenuBarItem]](repeating: [], count: apps.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: apps.count) { i in
+            let app = apps[i]
             let pid = app.processIdentifier
-            if pid == ownPID || pid <= 0 { continue }
-            let children = barChildren(pid: pid)
-            if children.isEmpty { continue }
-
+            let (children, timedOut) = barChildrenReporting(pid: pid)
+            if timedOut {
+                unresponsiveLock.lock()
+                unresponsive[pid] = Date().addingTimeInterval(unresponsiveDelay)
+                unresponsiveLock.unlock()
+            }
+            guard !children.isEmpty else { return }
             let bundleID = app.bundleIdentifier ?? "pid\(pid)"
             let appName = app.localizedName ?? bundleID
-            for (index, child) in children.enumerated() {
-                guard let item = item(child, index: index, app: app, bundleID: bundleID, appName: appName)
-                else { continue }
-                if item.isOverflowIndicator { indicator = item } else { found.append(item) }
+            let items = children.enumerated().compactMap { index, child in
+                item(child, index: index, app: app, bundleID: bundleID, appName: appName)
             }
+            lock.lock(); perApp[i] = items; lock.unlock()
+        }
+        var found: [MenuBarItem] = []
+        var indicator: MenuBarItem?
+        for item in perApp.joined() {
+            if item.isOverflowIndicator { indicator = item } else { found.append(item) }
         }
         return (assignZones(found, indicator: indicator).items, indicator)
     }
 
     /// Children of the app's `AXExtrasMenuBar`, empty when it has none.
     static func barChildren(pid: pid_t) -> [AXUIElement] {
+        barChildrenReporting(pid: pid).children
+    }
+
+    /// Same, and whether the app missed the AX timeout.
+    private static func barChildrenReporting(pid: pid_t) -> (children: [AXUIElement], timedOut: Bool) {
         let element = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(element, 0.3)
         var barRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &barRef) == .success,
-              let barRef, CFGetTypeID(barRef) == AXUIElementGetTypeID() else { return [] }
+        let error = AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &barRef)
+        guard error == .success, let barRef, CFGetTypeID(barRef) == AXUIElementGetTypeID()
+        else { return ([], error == .cannotComplete) }
         let bar = barRef as! AXUIElement
         AXUIElementSetMessagingTimeout(bar, 0.3)
         var childrenRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(bar, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-              let children = childrenRef as? [AXUIElement] else { return [] }
+              let children = childrenRef as? [AXUIElement] else { return ([], false) }
         children.forEach { AXUIElementSetMessagingTimeout($0, 0.3) }
-        return children
+        return (children, false)
     }
 
     private static func item(_ child: AXUIElement, index: Int, app: NSRunningApplication,

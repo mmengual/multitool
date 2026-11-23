@@ -185,6 +185,20 @@ Mesuré le 22 novembre 2026 sur macOS 27.2.1, écran du MacBook seul :
 | Une icône créée dans une barre saturée naît dans le déroulé, donc invisible. | Le chevron doit être amené dans la barre visible à la première activation. |
 | Un glisser `⌘` simulé déplace une icône, dans les 2 sens. | C'est le moyen de ranger une icône dans une zone. Le curseur est pris moins d'une seconde. |
 
+Mesuré le 23 novembre 2026 sur macOS 27.2, MacBook à encoche, barre saturée par
+des icônes de test (séries A à D) :
+
+| Constat | Conséquence |
+|---|---|
+| Déroulé ouvert par `AXPress`, une icône évincée est lisible en 30 à 54 ms. Il se referme en 50 à 85 ms. macOS le referme seul quand une app passe au premier plan. | Multitool relit l'état de l'indicateur avant chaque pression. |
+| Déroulé fermé, une app évincée perd tout son `AXExtrasMenuBar`. | La bande dessine un cache, rempli déroulé ouvert. |
+| Le menu natif d'une icône évincée s'ouvre sous sa place dans le déroulé, à gauche de l'encoche. | Le menu est relu et redessiné sous la bande. |
+| Une entrée de menu lue déroulé ouvert se presse déroulé refermé. | Le menu redessiné presse l'entrée réelle. |
+| `AXPress` sur une icône sans menu : Google Drive, Slack et Notion répondent, OneDrive l'ignore, Sophos Connect plante. | Jamais d'`AXPress` sur une icône sans menu : clic simulé, déroulé ouvert, curseur remis en place (11 à 25 ms). |
+| Les fenêtres et popovers ouverts ainsi s'ancrent à gauche de l'encoche. | Limite acceptée. |
+| Avec 32 icônes évincées, le déroulé natif n'en montre que 24. | La bande ne voit que ce que le déroulé montre. |
+| Lire les 155 apps lancées une à une prend 2 s, dont 900 ms pour 3 apps qui ne répondent pas. | Lecture en parallèle, apps d'arrière-plan et apps muettes écartées. |
+
 Décisions du 22 novembre 2026 :
 - Matin : Multitool pilote le déroulé natif, la bande sous la barre est abandonnée
   (les icônes cachées semblaient hors d'atteinte).
@@ -198,23 +212,22 @@ Décisions du 22 novembre 2026 :
 
 1. **Inventaire, lecture seule** (fait) : page de réglages avec les icônes, leur
    app et leur zone actuelle.
-2. **Chevron et masquage** (écrit, vu à l'écran) : le chevron séparateur, sa
-   largeur calibrée, le clic qui ouvre et ferme le déroulé natif. Reste à
-   corriger : le chevron naît invisible sur une barre saturée, le clic refusé ne
-   dit rien, la page affiche de faux « Multitool » cachés.
-3. **Bande** : la fenêtre sous l'horloge, les icônes d'application, le clic
-   relayé. Le chevron ouvre la bande au lieu du déroulé natif.
+2. **Chevron et masquage** (fait) : le chevron séparateur, sa largeur calibrée.
+   Corrigés au lot 3 : le chevron né invisible est recréé une fois à droite des
+   icônes tierces, la barre masquée ne compte plus comme une éviction, le clic
+   ouvre toujours la bande, la page ne montre plus de faux « Multitool ».
+3. **Bande** (écrit, essayé le 23/11, brief dans `docs/menubar-lot3-brief.md`) :
+   la fenêtre sous l'horloge, les icônes d'application, le clic relayé (menu
+   redessiné, menu natif ou clic simulé selon l'icône). Le chevron ouvre la bande,
+   le ⌥-clic le déroulé natif. Corrections du lot 2 faites.
 4. **Classement** : les 2 cases par icône, Multitool déplace l'icône par glisser
    `⌘` simulé. Une nouvelle icône arrive en barre principale.
 5. **Survol** : ouverture par le coin haut droit, fermeture à la sortie de la
    barre et de la bande.
 
 Questions ouvertes :
-- Clic relayé : prouvé sur une icône à menu (Teleport Connect). Non testé sur une
-  icône qui ouvre une fenêtre ou un popover (Teams).
-- Le menu s'ouvre à gauche de l'encoche, loin de la bande. Piste : lire les
-  entrées du menu par l'Accessibilité et les redessiner sous la bande.
-- Délai entre le clic dans la bande et l'apparition du menu : non mesuré.
+- Les fenêtres et popovers des icônes sans menu s'ouvrent à gauche de l'encoche.
+- Le déroulé natif a une capacité limitée : au-delà, des icônes échappent à la bande.
 - Écran externe, sans encoche : aucun masquage aujourd'hui, non testé.
 - Identifiant stable d'une icône, nécessaire au classement : l'inventaire numérote
   par position.
