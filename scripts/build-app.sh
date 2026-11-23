@@ -20,7 +20,7 @@ BUNDLE_ID="com.mmengual.multitool"
 HELPER_ID="com.mmengual.multitool.helper"
 APP="$ROOT/$APP_NAME.app"
 FEED_URL="https://raw.githubusercontent.com/mmengual/multitool/releases/appcast.xml"
-DEFAULT_IDENTITY="6049975204961E83D9BD36350013067DBA1D1307" # Apple Development: maximemengual@gmail.com
+DEFAULT_IDENTITY="6049975204961E83D9BD36350013067DBA1D1307" # Apple Development certificate of the main Mac
 
 VERSION="${MULTITOOL_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD="${MULTITOOL_BUILD:-$(git rev-list --count HEAD)}"
@@ -32,7 +32,8 @@ IDENTITIES="$(security find-identity -v -p codesigning | grep -v REVOKED)"
 if [[ -z "${SIGN_IDENTITY:-}" ]] && ! grep -q "$IDENTITY" <<<"$IDENTITIES"; then
     # Each Mac has its own Apple Development certificate. They share the same name,
     # which is what the Accessibility permission checks, so any valid one will do.
-    FALLBACK="$(awk '/"Apple Development: maximemengual@gmail.com/ { print $2; exit }' <<<"$IDENTITIES")"
+    # The first Apple Development identity is taken: no address in the repo.
+    FALLBACK="$(awk '/"Apple Development: / { print $2; exit }' <<<"$IDENTITIES")"
     if [[ -n "$FALLBACK" ]]; then
         echo "note: default identity not on this Mac, signing with $FALLBACK." >&2
         IDENTITY="$FALLBACK"
