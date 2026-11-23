@@ -3,6 +3,15 @@
   <channel>
     <title>Multitool</title>
     <item>
+      <title>Multitool 0.4.0</title>
+      <pubDate>Mon, 23 Nov 2026 20:26:39 GMT</pubDate>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>Nouveau module Barre des menus, désactivé par défaut : un chevron cache les icônes de votre choix et les montre dans une bande sous l&#x27;horloge.</li><li>Un clic sur une icône de la bande ouvre son menu sous la bande, ou sa fenêtre.</li><li>Réglages : 2 interrupteurs par icône, Barre cachée et Masquée. Multitool range l&#x27;icône lui-même, sans prendre le curseur s&#x27;il a l&#x27;accès complet au disque.</li><li>Le rangement des icônes est récent et peu essayé : le bouton Restaurer de la page remet la disposition d&#x27;origine.</li><li>Lecture de la barre des menus plus rapide.</li></ul>]]></description>
+      <enclosure url="https://api.github.com/repos/mmengual/multitool/releases/assets/784427553" type="application/octet-stream" sparkle:edSignature="x/1boJoKNlTPvlo0/Jiw1pL8vNgqLIA2ma6NPTlpiHCeHo4wgJOUBN9+nEKxRfjI1WWtbxKOFYfHHQVPp2imDA==" length="2917786"/>
+    </item>
+    <item>
       <title>Multitool 0.3.2</title>
       <pubDate>Tue, 17 Nov 2026 10:38:24 GMT</pubDate>
       <sparkle:version>11</sparkle:version>
