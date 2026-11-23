@@ -15,12 +15,23 @@ enum MenuBarOverflow {
 
     private static let lock = NSLock()
     private static var held = false
+    private static var arranging = false
 
-    /// True while Multitool keeps open an overflow it opened itself. Any thread.
-    /// The chevron doesn't recalculate its length meanwhile (the bar moves).
+    /// True while Multitool keeps open an overflow it opened itself, or moves an icon
+    /// (`MenuBarArranger`). Any thread. The bar is moving: the chevron doesn't
+    /// recalculate its length and the light scan doesn't run meanwhile.
     static var heldOpen: Bool {
         lock.lock(); defer { lock.unlock() }
+        return held || arranging
+    }
+
+    private static var overflowHeld: Bool {
+        lock.lock(); defer { lock.unlock() }
         return held
+    }
+
+    static func setArranging(_ value: Bool) {
+        lock.lock(); arranging = value; lock.unlock()
     }
 
     private static func setHeld(_ value: Bool) {
@@ -94,7 +105,7 @@ enum MenuBarOverflow {
     /// `held` stays true until the indicator reads closed: a light scan during the
     /// closing animation would see a half-open bar.
     static func closeIfHeldSync() {
-        guard heldOpen else { return }
+        guard overflowHeld else { return }
         defer { setHeld(false) }
         guard let indicator = findIndicator(), isExpanded(indicator) else {
             Log.menuBar.info("overflow already closed by macOS")

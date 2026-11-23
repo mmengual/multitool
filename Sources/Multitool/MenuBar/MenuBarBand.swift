@@ -111,7 +111,9 @@ final class MenuBarBand: NSObject, NSWindowDelegate {
     }
 
     private func syncItems() {
-        model.items = inventory.evicted
+        // An icon classified « Masquée » is evicted like the others, and not drawn here.
+        let placements = Settings.shared.menuBarPlacements
+        model.items = inventory.evicted.filter { placements[$0.placementKey] != MenuBarPlacement.masked.rawValue }
         if model.phase != .noAccess {
             if inventory.lastFullScan == nil && inventory.overflowIndicator != nil {
                 model.phase = .reading

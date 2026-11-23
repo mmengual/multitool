@@ -11,6 +11,7 @@ final class MenuBarChevron: NSObject {
     static let shared = MenuBarChevron()
 
     nonisolated static let autosaveName = "MultitoolMenuBarChevron"
+    nonisolated static let accessibilityLabel = "Icônes cachées de la barre des menus"
     /// Folded length: the glyph alone.
     nonisolated static let glyphLength: CGFloat = 24
     /// Room left for the native overflow indicator, right of the notch.
@@ -51,11 +52,59 @@ final class MenuBarChevron: NSObject {
     private static let maxBirthChecks = 10
     /// Last preferred position read, to tell a ⌘-drag from a layout move.
     private var lastPosition: Double?
+    /// Length the notch allows, before the eviction cap. nil on a screen without a notch.
+    private var uncappedTarget: CGFloat?
+    /// Situation in which the eviction cap was last lifted: once per situation.
+    private var capLiftKey = ""
+    private var capTimer: Timer?
 
     private override init() { super.init() }
 
     /// Window of the chevron, to keep it out of the inventory.
     var windowNumber: Int? { item?.button?.window?.windowNumber }
+
+    /// Frame of the chevron in Accessibility coordinates (origin at the top left),
+    /// nil when it isn't placed on a screen.
+    var frameAX: CGRect? {
+        guard let window = item?.button?.window, window.screen != nil,
+              let height = NSScreen.screens.first?.frame.height else { return nil }
+        let f = window.frame
+        return CGRect(x: f.minX, y: height - f.maxY, width: f.width, height: f.height)
+    }
+
+    /// Room left for the main bar: what the chevron fills beyond its glyph. nil on a
+    /// screen without a notch, where nothing is hidden and nothing is refused.
+    var freeSpace: CGFloat? { uncappedTarget.map { max(0, $0 - Self.glyphLength) } }
+
+    /// Makes MenuBarAgent read the position table again: it only applies a write once
+    /// a status item of the writing process is laid out again (measured on 23/11).
+    /// `shrinkBy` > 0 makes room first for an icon coming to the main bar, so it
+    /// doesn't push the chevron out. Else the length moves by 1 pt and comes back.
+    /// Call with `MenuBarOverflow.setArranging(true)`: no recalculation meanwhile.
+    func forceLayoutRead(shrinkBy: CGFloat) {
+        guard let item else { return }
+        let current = item.length
+        let shrunk = max(Self.glyphLength, current - shrinkBy)
+        if shrinkBy > 0, shrunk < current {
+            item.length = shrunk
+            drawGlyph(length: shrunk)
+        } else {
+            // Nothing to shrink (glyph length already): a 1 pt round trip.
+            item.length = current + 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                MainActor.assumeIsolated {
+                    // Only if nothing changed the length since (another arrangement).
+                    guard let self, let item = self.item, item.length == current + 1 else { return }
+                    item.length = current
+                    self.drawGlyph(length: current)
+                }
+            }
+        }
+        Log.menuBar.info("chevron: layout read forced (shrink \(Double(shrinkBy)) pt)")
+    }
+
+    /// An arrangement is over: the length is computed again from the new place.
+    func arrangementEnded() { scheduleRecalculation(reason: "arrangement ended") }
 
     // MARK: Lifecycle
 
@@ -65,6 +114,34 @@ final class MenuBarChevron: NSObject {
         rescued = false
         create()
         observe()
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.liftCapIfRoom() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        capTimer = timer
+    }
+
+    /// A capped chevron is shorter than the room it has: hidden icons show up on its
+    /// left. When one does while the native overflow is closed, the cap is lifted,
+    /// once per situation (screens, place of the chevron, visible icons).
+    private func liftCapIfRoom() {
+        guard item != nil, evictionCap != nil || evictions > 0, Self.barShown,
+              !MenuBarOverflow.heldOpen, Self.evictionSign(item?.button?.window) == nil else { return }
+        let inventory = MenuBarInventory.shared
+        inventory.refresh { [weak self] in
+            guard let self, let frame = self.frameAX, !inventory.overflowOpen,
+                  let indicator = inventory.overflowIndicator else { return }
+            let leaked = inventory.items.filter {
+                !$0.isSystem && $0.frame.minX > indicator.frame.maxX && $0.frame.maxX <= frame.minX + 1
+            }
+            guard !leaked.isEmpty else { return }
+            let key = self.screenKey + "|\(self.lastPosition ?? -1)|" + inventory.items.map(\.id).joined(separator: ",")
+            guard key != self.capLiftKey else { return }
+            self.capLiftKey = key
+            Log.menuBar.info("chevron: \(leaked.count) hidden icons visible on its left, eviction cap lifted")
+            self.resetEvictions()
+            self.scheduleRecalculation(reason: "cap lifted")
+        }
     }
 
     private func create() {
@@ -75,7 +152,7 @@ final class MenuBarChevron: NSObject {
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleNone
             button.toolTip = "Icônes cachées"
-            button.setAccessibilityLabel("Icônes cachées de la barre des menus")
+            button.setAccessibilityLabel(Self.accessibilityLabel)
             button.target = self
             button.action = #selector(clicked(_:))
             button.sendAction(on: [.leftMouseUp])
@@ -153,6 +230,8 @@ final class MenuBarChevron: NSObject {
         pending = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers = []
+        capTimer?.invalidate()
+        capTimer = nil
 
         // removeStatusItem forgets the place: save it and write it back. Never hide the
         // item with `isVisible = false`, macOS would remember it as removed.
@@ -251,6 +330,7 @@ final class MenuBarChevron: NSObject {
         let leftLimit = Self.leftLimit(of: screen)
         var target = Self.targetLength(chevronMaxX: chevronMaxX, leftLimit: leftLimit,
                                        reserve: Self.reserve, glyph: Self.glyphLength)
+        uncappedTarget = leftLimit == nil ? nil : target
         if leftLimit == nil {
             Log.menuBar.info("screen without a notch: no hiding, glyph length")
         }
@@ -307,8 +387,8 @@ final class MenuBarChevron: NSObject {
 
     // MARK: Glyph
 
-    /// The glyph is drawn at the right edge of an image as wide as the item, so the
-    /// whole item stays clickable and the glyph sits next to the visible icons.
+    /// The glyph is drawn at the left edge of an image as wide as the item, next to
+    /// macOS's own overflow indicator. The whole item stays clickable.
     private func drawGlyph(length: CGFloat) {
         guard let button = item?.button else { return }
         let symbol = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)?
@@ -318,7 +398,7 @@ final class MenuBarChevron: NSObject {
             guard let symbol else { return false }
             let glyph = symbol.size
             let inset = max(0, (MenuBarChevron.glyphLength - glyph.width) / 2)
-            let origin = NSPoint(x: rect.maxX - inset - glyph.width, y: (rect.height - glyph.height) / 2)
+            let origin = NSPoint(x: rect.minX + inset, y: (rect.height - glyph.height) / 2)
             symbol.draw(in: NSRect(origin: origin, size: glyph))
             return true
         }

@@ -157,7 +157,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The chevron doesn't need the Accessibility permission, only its click does.
         settings.$menuBarEnabled
             .receive(on: DispatchQueue.main)
-            .sink { enabled in enabled ? MenuBarChevron.shared.start() : MenuBarChevron.shared.stop() }
+            .sink { enabled in
+                _ = MenuBarClassifier.shared   // keeps the boxes and the bar in agreement
+                enabled ? MenuBarChevron.shared.start() : MenuBarChevron.shared.stop()
+            }
             .store(in: &cancellables)
     }
 

@@ -16,7 +16,19 @@ struct MenuBarItem: Identifiable, Equatable {
     let isOverflowIndicator: Bool // AXIdentifier "menu-bar-overflow-indicator", "-expanded" when open
     var isExpanded = false  // the indicator only: its identifier ends with "-expanded"
     let hasMenu: Bool       // an AXMenu child: AppKit opens it without running the app's code
+    var axIdentifier = ""   // its own AXIdentifier, else its first child's ("com.apple.menuextra.wifi")
+    /// Its entries in macOS's position table (`MenuBarLayoutStore`). One when the
+    /// pairing is sure, several when it is ambiguous, none when it has no entry.
+    var layoutKeys: [String] = []
     var zone: Zone
+
+    /// Key of the icon in `Settings.menuBarPlacements`: its table entry when it has
+    /// one, stable across launches, else its app.
+    var placementKey: String { layoutKeys.count == 1 ? layoutKeys[0] : legacyKey }
+    /// Key used while the icon has no sure table entry (no access yet, ambiguous pairing).
+    var legacyKey: String { "app:\(bundleID)#\(index)" }
+    /// Names the table may know the owner by: the bundle ID, else the process name.
+    var owners: [String] { bundleID.hasPrefix("pid") ? [appName] : [bundleID, appName] }
 }
 
 /// Inventory of the menu bar icons.
@@ -43,6 +55,8 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
     @Published private(set) var lastFullScan: Date?
     /// The cache may miss icons: the next band opening runs a full scan.
     @Published private(set) var cacheStale = true
+    /// macOS's position table could be read at the last scan.
+    @Published private(set) var layoutAccess = false
 
     /// Multitool's main status item, set by `AppDelegate`: its window is the only one
     /// read for our own icon (the other `NSStatusBarWindow`s gave fake icons).
@@ -102,10 +116,12 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         let own = Self.ownItems()
         DispatchQueue.global(qos: .utility).async {
             let result = Self.scan()
+            let table = MenuBarLayoutStore.read()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self.scanning = false
-                    self.publish(items: result.items + own, indicator: result.indicator)
+                    self.layoutAccess = table != nil
+                    self.publish(items: Self.withLayoutKeys(result.items + own, table: table), indicator: result.indicator)
                     completion?()
                 }
             }
@@ -133,9 +149,11 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
                 MainActor.assumeIsolated { Self.ownItems() }
             }
             MenuBarOverflow.closeIfHeldSync()
+            let table = MenuBarLayoutStore.read()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    let (list, _) = Self.assignZones(result.items + own, indicator: result.indicator)
+                    self.layoutAccess = table != nil
+                    let (list, _) = Self.assignZones(Self.withLayoutKeys(result.items + own, table: table), indicator: result.indicator)
                     self.evicted = list.filter { $0.zone == .hidden }
                     self.lastFullScan = Date()
                     self.cacheStale = false
@@ -215,6 +233,35 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Pairs the icons with the entries of macOS's position table. Unchanged without access.
+    /// A pairing that was sure once is remembered for the session: the light scan sees
+    /// fewer icons than the full scan and may find the same icon ambiguous.
+    static func withLayoutKeys(_ found: [MenuBarItem], table: [String: Double]?) -> [MenuBarItem] {
+        guard let table else { return found }
+        var list = found.sorted { $0.frame.minX < $1.frame.minX }
+        let pairs = MenuBarLayoutStore.match(
+            // Another Multitool's chevron (seen by the CLI) is a separator, not an icon.
+            items: list.filter { $0.label != MenuBarChevron.accessibilityLabel }
+                .map { (id: $0.id, owners: $0.owners, axIdentifier: $0.axIdentifier) }, table: table)
+        rememberedLock.lock(); defer { rememberedLock.unlock() }
+        for i in list.indices {
+            let memo = "\(list[i].bundleID)|\(list[i].axIdentifier)|\(list[i].index)"
+            let keys = pairs[list[i].id] ?? []
+            if keys.count == 1 {
+                remembered[memo] = keys
+                list[i].layoutKeys = keys
+            } else if let known = remembered[memo], known.allSatisfy({ table[$0] != nil }) {
+                list[i].layoutKeys = known
+            } else {
+                list[i].layoutKeys = keys
+            }
+        }
+        return list
+    }
+
+    private static var remembered: [String: [String]] = [:]
+    private static let rememberedLock = NSLock()
+
     /// Sorts by `minX` and marks as hidden the icons left of the overflow indicator.
     /// Without an indicator everything is `.main`. `open` is true when one icon is hidden.
     static func assignZones(_ found: [MenuBarItem], indicator: MenuBarItem?) -> (items: [MenuBarItem], open: Bool) {
@@ -239,7 +286,7 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.mmengual.multitool"
         let f = window.frame
         let frame = CGRect(x: f.minX, y: screenHeight - f.maxY, width: f.width, height: f.height)
-        return [MenuBarItem(id: "\(bundleID)#0", appName: "Multitool", bundleID: bundleID,
+        return [MenuBarItem(id: "\(bundleID)#0", appName: ProcessInfo.processInfo.processName, bundleID: bundleID,
                             pid: ProcessInfo.processInfo.processIdentifier, index: 0, label: "Multitool",
                             frame: frame, isSystem: false, isOverflowIndicator: false, isExpanded: false, hasMenu: false,
                             zone: .main)]
@@ -335,6 +382,7 @@ final class MenuBarInventory: ObservableObject, @unchecked Sendable {
             isOverflowIndicator: isOverflowIdentifier(identifier),
             isExpanded: identifier.hasSuffix("-expanded"),
             hasMenu: menu(of: child) != nil,
+            axIdentifier: identifier.isEmpty ? (children(child).first.map { string($0, kAXIdentifierAttribute) } ?? "") : identifier,
             zone: .main)
     }
 

@@ -65,6 +65,23 @@ enum Main {
             if !Permissions.accessibility { print("Accessibilité : absente") }
             exit(0)
         }
+        // `--menubar-layout`: prints macOS's position table, from the right of the bar to
+        // the left, with the visible icon paired to each entry. Read-only.
+        if CommandLine.arguments.contains("--menubar-layout") {
+            guard let table = MenuBarLayoutStore.read() else {
+                print("layout: table illisible (accès complet au disque ou dossier choisi requis)")
+                exit(1)
+            }
+            let items = MenuBarInventory.withLayoutKeys(MenuBarInventory.scan().items, table: table)
+            for (key, weight) in table.sorted(by: { $0.value < $1.value }) {
+                let paired = items.filter { $0.layoutKeys.contains(key) }
+                    .map { "\($0.appName) (x \(Int($0.frame.minX))\($0.layoutKeys.count > 1 ? ", ambigu" : ""))" }
+                print(String(format: "%8.1f  ", weight) + key + (paired.isEmpty ? "" : "  ← " + paired.joined(separator: ", ")))
+            }
+            let unpaired = items.filter { $0.layoutKeys.isEmpty && !$0.isOverflowIndicator }
+            if !unpaired.isEmpty { print("sans entrée : " + unpaired.map(\.appName).joined(separator: ", ")) }
+            exit(0)
+        }
         // `--menubar-toggle`: opens or closes the native overflow by AXPress, without starting the app.
         if CommandLine.arguments.contains("--menubar-toggle") {
             if let cause = MenuBarOverflow.toggleSync() {

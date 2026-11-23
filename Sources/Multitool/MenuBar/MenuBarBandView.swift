@@ -56,13 +56,7 @@ private struct MenuBarBandCell: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .bottomTrailing) {
-                Group {
-                    if let icon = NSRunningApplication(processIdentifier: item.pid)?.icon {
-                        Image(nsImage: icon).resizable().interpolation(.high)
-                    } else {
-                        Image(systemName: "app.dashed").foregroundStyle(Orbe.texte2)
-                    }
-                }
+                MenuBarItemIcon(item: item)
                 .frame(width: 18, height: 18)
                 .opacity(pending ? 0.5 : 1)
                 .frame(width: MenuBarBand.cell, height: MenuBarBand.cell)
