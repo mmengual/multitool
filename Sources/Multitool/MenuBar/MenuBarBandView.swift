@@ -10,27 +10,15 @@ struct MenuBarBandView: View {
             switch model.phase {
             case .list:
                 HStack(spacing: MenuBarBand.spacing) {
-                    ForEach(model.items) { item in
-                        MenuBarBandCell(item: item,
-                                        pending: model.pendingID == item.id,
-                                        failed: model.failedID == item.id) { model.onPick(item) }
+                    ForEach(model.apps) { app in
+                        MenuBarBandCell(app: app) { model.onPick(app) }
                     }
                 }
                 .padding(MenuBarBand.padding)
             case .empty:
-                message("Aucune icône cachée")
-            case .reading:
-                message("Lecture des icônes cachées…")
-            case .failed(let cause):
-                message("Icônes cachées illisibles : \(cause)")
-            case .noAccess:
-                HStack(spacing: Orbe.Space.s3) {
-                    OrbeBadge(ton: .alerte, text: "Autorisation Accessibilité manquante")
-                    Button("Autoriser", action: Permissions.openAccessibilitySettings)
-                        .buttonStyle(.orbePlein)
-                }
-                .padding(.horizontal, Orbe.Space.s4)
-                .padding(.vertical, MenuBarBand.padding)
+                message("Aucune icône dans la barre cachée")
+            case .unavailable:
+                message("Masquage indisponible dans cette version")
             }
         }
         .background(Orbe.surface, in: RoundedRectangle(cornerRadius: Orbe.Rayon.s))
@@ -45,37 +33,37 @@ struct MenuBarBandView: View {
     }
 }
 
-/// One evicted icon: its application's icon, a fixed image.
+/// One hidden app: its application's icon, a fixed image.
 private struct MenuBarBandCell: View {
-    let item: MenuBarItem
-    let pending: Bool
-    let failed: Bool
+    let app: MenuBarApp
     let action: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .bottomTrailing) {
-                MenuBarItemIcon(item: item)
+            MenuBarAppIcon(bundleID: app.bundleID)
                 .frame(width: 18, height: 18)
-                .opacity(pending ? 0.5 : 1)
                 .frame(width: MenuBarBand.cell, height: MenuBarBand.cell)
-                if failed {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Orbe.alerte)
-                }
-            }
-            .background(hover ? Orbe.surfaceHaute : .clear, in: RoundedRectangle(cornerRadius: Orbe.Rayon.xs))
-            .contentShape(Rectangle())
+                .background(hover ? Orbe.surfaceHaute : .clear, in: RoundedRectangle(cornerRadius: Orbe.Rayon.xs))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .help(title)
-        .accessibilityLabel(title)
+        .help(app.name)
+        .accessibilityLabel(app.name)
     }
+}
 
-    private var title: String {
-        item.isSystem && !item.label.isEmpty ? item.label : item.appName
+/// The application's icon, from the running app or from its bundle on disk.
+struct MenuBarAppIcon: View {
+    let bundleID: String
+
+    var body: some View {
+        if let icon = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.icon
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map({ NSWorkspace.shared.icon(forFile: $0.path) }) {
+            Image(nsImage: icon).resizable().interpolation(.high)
+        } else {
+            Image(systemName: "app.dashed").foregroundStyle(Orbe.texte2)
+        }
     }
 }

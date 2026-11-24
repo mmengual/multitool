@@ -16,7 +16,7 @@ frappes d'un clavier défectueux. Elle a grossi, d'où le changement de nom.
 | Inversion ⌘ / ⌥ | en place | Inverse Commande et Option clavier par clavier, en pilotant le réglage Touches de modification de macOS. |
 | Partage de zone | en place | Diffuse une zone de l'écran dans une fenêtre invisible que Teams, Zoom ou Meet peuvent partager. |
 | Processus et ressources | en cours | Moniteur : état du poste, consommateurs par app (processeur, mémoire, disque, réseau, énergie), anomalies expliquées, exécutables d'origine douteuse. Éléments de démarrage à venir. |
-| Barre des menus | en cours | Inventaire des icônes de la barre. Un chevron, désactivé par défaut et placé par glisser ⌘, cache les icônes à sa gauche dans le déroulé de macOS, qu'un clic sur le chevron ouvre et ferme. Classement des icônes à venir. |
+| Barre des menus | en cours | Module désactivé par défaut. Chaque app à icône a 2 interrupteurs : « Barre cachée » retire son icône de la barre, sans vide, et la range dans une bande ouverte par un chevron ; « Masquée » la retire aussi de la bande. Un clic dans la bande fait revenir l'icône le temps de s'en servir. Passe par les interrupteurs par app de macOS 27. |
 | Captures d'écran | prévu | Captures et retouche, dans l'esprit de Shottr. |
 
 Le détail des modules prévus et l'ordre de réalisation sont dans
@@ -65,9 +65,8 @@ Options de développement, à passer au binaire
 
 Commandes de la barre des menus, traitées sans démarrer l'app (pas d'icône, pas de fenêtre) :
 
-- `--menubar-dump` liste les icônes de la barre, le cadre de l'indicateur du déroulé de macOS,
-  la limite gauche (bord droit de l'encoche) et la largeur que prendrait un chevron posé
-  à gauche de la première icône ;
+- `--menubar-dump` liste les icônes de la barre lues par l'Accessibilité et dit si
+  l'indicateur du déroulé de macOS est présent ;
 - `--menubar-toggle` ouvre ou ferme le déroulé de macOS, imprime `toggle: ok` ou la cause
   de l'échec et sort en code 1 dans ce cas.
 

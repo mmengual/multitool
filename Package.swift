@@ -26,6 +26,12 @@ let package = Package(
             dependencies: ["MultitoolShared"],
             path: "Sources/MultitoolHelper"
         ),
+        // Reads and writes macOS's per-app menu bar switches. Signed with Developer ID and
+        // an app-group entitlement by scripts/build-app.sh, launched by the app.
+        .executableTarget(
+            name: "MultitoolVisibility",
+            path: "Sources/MultitoolVisibility"
+        ),
         // What the app and the helper share: the XPC protocol and the process sampler.
         .target(
             name: "MultitoolShared",

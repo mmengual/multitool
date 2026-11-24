@@ -4,114 +4,106 @@ import SwiftUI
 struct MenuBarPane: View {
     @ObservedObject private var inventory = MenuBarInventory.shared
     @ObservedObject private var settings = Settings.shared
-    @ObservedObject private var classifier = MenuBarClassifier.shared
+    @ObservedObject private var visibility = MenuBarVisibility.shared
     @State private var accessibility = Permissions.accessibility
-    @State private var layoutAccess = true
-    @State private var freeSpace = MenuBarChevron.shared.freeSpace
     @State private var hasBackup = MenuBarLayoutStore.hasBackup
+    @State private var restoreNote: String?
 
     var body: some View {
         PaneForm {
-            if !accessibility || !layoutAccess {
+            if !accessibility || (visibility.loaded && visibility.switches == nil) {
                 OrbeSection(title: "Accès") {
                     if !accessibility {
                         OrbeRow(title: "Autorisation Accessibilité manquante",
-                                detail: "Sans elle, Multitool ne peut pas lire les icônes de la barre des menus.") {
+                                detail: "Sans elle, Multitool ne peut ni lire les icônes de la barre des menus ni cliquer celles de la bande.") {
                             OrbeBadge(ton: .alerte, text: "À accorder")
                             Button("Autoriser", action: Permissions.openAccessibilitySettings)
                                 .buttonStyle(.orbePlein)
                         }
                     }
-                    if !accessibility && !layoutAccess { OrbeFilet() }
-                    if !layoutAccess {
-                        OrbeRow(title: "Accès à la disposition de la barre",
-                                detail: "macOS garde l'ordre des icônes dans un dossier protégé. Avec l'accès complet au disque, Multitool range une icône sans prendre le curseur. Sans lui, il la glisse avec ⌘, ce qui prend le curseur moins d'une seconde.") {
-                            Button("Choisir le dossier") { layoutAccess = MenuBarLayoutStore.requestAccess() }
-                                .buttonStyle(.orbe)
-                            Button("Accès complet au disque", action: MenuBarLayoutStore.openFullDiskAccessSettings)
-                                .buttonStyle(.orbePlein)
+                    if visibility.loaded && visibility.switches == nil {
+                        if !accessibility { OrbeFilet() }
+                        OrbeRow(title: "Masquage indisponible",
+                                detail: "Cette version de Multitool n'a pas l'outil signé qui règle les interrupteurs de macOS. Les icônes restent dans la barre.") {
+                            OrbeBadge(ton: .alerte, text: "Indisponible")
                         }
                     }
                 }
             }
 
             OrbeSection(title: "Icônes", note: note) {
-                OrbeRow(title: "Place libre dans la barre principale", detail: freeSpaceDetail) {
-                    Button("Ranger maintenant", action: classifier.arrangeAll)
-                        .buttonStyle(.orbe)
-                        .disabled(!settings.menuBarEnabled || !classifier.busy.isEmpty)
-                }
-                OrbeFilet()
                 MenuBarColumnHeader()
-                let rows = classifier.rows
+                let rows = self.rows
                 if rows.isEmpty {
                     OrbeFilet()
                     OrbeRow(title: "Aucune icône lue")
                 }
-                ForEach(rows) { item in
+                ForEach(rows) { app in
                     OrbeFilet()
-                    MenuBarItemRow(item: item, classifier: classifier, enabled: settings.menuBarEnabled,
-                                   placements: settings.menuBarPlacements)
-                }
-                if inventory.overflowIndicator != nil && inventory.lastFullScan == nil {
-                    OrbeFilet()
-                    OrbeRow(title: "Icônes cachées pas encore lues",
-                            detail: "Multitool les lit à l'ouverture de cette page ou de la bande.")
+                    MenuBarAppRow(app: app, visibility: visibility, enabled: settings.menuBarEnabled,
+                                  placement: visibility.placement(of: app.bundleID),
+                                  switches: visibility.switches)
                 }
             }
 
             if hasBackup {
-                OrbeSection(title: "Disposition d'origine",
-                            note: "Multitool a gardé l'ordre de la barre tel qu'il était avant son premier rangement.") {
-                    OrbeRow(title: "Revenir à la disposition d'origine",
-                            detail: "Remet chaque icône à sa place d'avant. Les cases suivent la barre.") {
+                OrbeSection(title: "Ordre des icônes",
+                            note: "Multitool 0.4 déplaçait les icônes. Il a gardé l'ordre de la barre d'avant son premier déplacement. Demande l'accès complet au disque.") {
+                    OrbeRow(title: "Revenir à l'ordre d'origine", detail: restoreNote) {
                         Button("Restaurer") { restore() }.buttonStyle(.orbeDanger)
                     }
                 }
             }
         }
-        .onAppear { refresh(readHidden: true) }
-        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in refresh(readHidden: false) }
+        .onAppear { refresh() }
+        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in refresh() }
     }
 
     private var note: String? {
         guard settings.menuBarEnabled else { return "Activez le module pour classer les icônes." }
-        return "Sans case cochée, une icône reste dans la barre principale. « Barre cachée » la range dans la bande ouverte par le chevron. « Masquée » la cache aussi de la bande."
+        return "Sans case cochée, l'icône reste dans la barre. « Barre cachée » la retire de la barre et la range dans la bande ouverte par le chevron : un clic l'y fait revenir le temps de s'en servir. « Masquée » la retire aussi de la bande. Le réglage vaut pour toutes les icônes d'une même app."
     }
 
-    private var freeSpaceDetail: String {
-        guard settings.menuBarEnabled else { return "Module désactivé." }
-        guard let freeSpace else { return "Écran sans encoche : rien n'est caché ici, et rien n'est refusé." }
-        return "\(Int(freeSpace)) pt entre l'encoche et vos icônes. Une icône en prend environ 25."
-    }
-
-    /// Light scan every 3 s. On appearing, the hidden icons are read too if the cache
-    /// is stale: the native overflow opens for about 150 ms.
-    private func refresh(readHidden: Bool) {
-        accessibility = Permissions.accessibility
-        freeSpace = MenuBarChevron.shared.freeSpace
-        hasBackup = MenuBarLayoutStore.hasBackup
-        inventory.refresh {
-            layoutAccess = inventory.layoutAccess
-            guard readHidden, settings.menuBarEnabled, inventory.overflowIndicator != nil, inventory.cacheStale else { return }
-            inventory.fullScan { _ in }
+    /// Apps with a readable icon and classified apps that are not running.
+    private var rows: [MenuBarApp] {
+        var seen: Set<String> = []
+        var result: [MenuBarApp] = []
+        // A system process draws several icons: one row each. An app: one row.
+        for item in inventory.items where seen.insert(item.isSystem ? item.id : item.bundleID).inserted {
+            let name = item.isSystem && !item.label.isEmpty ? item.label : item.appName
+            result.append(MenuBarApp(bundleID: item.isSystem ? item.id : item.bundleID, name: name, running: true))
+        }
+        for bundleID in settings.menuBarPlacements.keys.sorted() where seen.insert(bundleID).inserted {
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+            let name = running?.localizedName
+                ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?.deletingPathExtension().lastPathComponent
+                ?? bundleID
+            result.append(MenuBarApp(bundleID: bundleID, name: name, running: running != nil))
+        }
+        // By name, the system icons last: a row never moves when its icon does (seen
+        // on 24/11: sorted by position, rows jumped under the pointer at each change).
+        return result.sorted {
+            let (a, b) = ($0.bundleID.contains("#"), $1.bundleID.contains("#"))
+            return a != b ? !a : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 
+    private func refresh() {
+        accessibility = Permissions.accessibility
+        hasBackup = MenuBarLayoutStore.hasBackup
+        inventory.refresh()
+        visibility.loaded ? visibility.refreshFromBar() : visibility.apply()
+    }
+
     private func restore() {
-        MenuBarOverflow.queue.async {
-            MenuBarOverflow.setArranging(true)
+        DispatchQueue.global(qos: .userInitiated).async {
             let ok = MenuBarLayoutStore.restoreBackup()
-            // Icons may come back to the main bar: the chevron makes room first, then
-            // computes its length again from its new place.
-            DispatchQueue.main.sync { MainActor.assumeIsolated { MenuBarChevron.shared.forceLayoutRead(shrinkBy: 120) } }
-            Thread.sleep(forTimeInterval: 2)
-            MenuBarOverflow.setArranging(false)
-            Log.menuBar.info("layout restored from the backup: \(ok)")
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    MenuBarChevron.shared.arrangementEnded()
-                    MenuBarInventory.shared.markStale("layout restored")
+                    let applied = ok && MenuBarChevron.shared.forceLayoutRead()
+                    restoreNote = applied ? "Ordre d'origine remis."
+                        : "Échec : activez le module et accordez l'accès complet au disque à Multitool."
+                    Log.menuBar.info("layout restored from the backup: \(ok)")
                 }
             }
         }
@@ -133,105 +125,61 @@ private struct MenuBarColumnHeader: View {
     }
 }
 
-/// One icon: its image, its name, where it is, and its 2 boxes.
-private struct MenuBarItemRow: View {
-    let item: MenuBarItem
-    @ObservedObject var classifier: MenuBarClassifier
+/// One app: its icon, its name, where its icon is, and its 2 boxes.
+private struct MenuBarAppRow: View {
+    let app: MenuBarApp
+    @ObservedObject var visibility: MenuBarVisibility
     let enabled: Bool
-    /// Passed so the row is drawn again when a choice changes.
-    let placements: [String: String]
+    // Passed so the row is drawn again when they change.
+    let placement: MenuBarPlacement?
+    let switches: [String: Bool]?
 
-    /// A system item is named by what it is ("Horloge"), not by the process that draws it.
-    private var title: String { item.isSystem && !item.label.isEmpty ? item.label : item.appName }
-    private var key: String { item.placementKey }
-    private var inventoryHasAccess: Bool { MenuBarInventory.shared.layoutAccess }
-    private var zoneText: String {
-        classifier.actualSide(of: item) == .hidden ? "Dans la barre cachée" : "Dans la barre principale"
-    }
+    private var bundleID: String { app.bundleID.components(separatedBy: "#")[0] }
+    private var reason: String? { visibility.unclassifiableReason(bundleID) }
 
     private var detail: String {
-        if let note = classifier.notes[key] { return note }
-        if classifier.busy.contains(key) { return "Déplacement en cours…" }
-        if classifier.isFixed(item) { return "Toujours dans la barre principale : macOS ne la déplace pas." }
-        if item.layoutKeys.isEmpty && inventoryHasAccess { return zoneText + " · déplacée par glisser ⌘, faute d'entrée dans la table de macOS" }
-        return zoneText
+        if let note = visibility.notes[bundleID] { return note }
+        if let reason { return reason }
+        if visibility.relaying.contains(bundleID) { return "Affichée le temps d'un clic" }
+        if !app.running { return "App non lancée" }
+        switch placement {
+        case .hidden: return "Dans la barre cachée"
+        case .masked: return "Masquée"
+        case nil: return switches?[bundleID] == false ? "Éteinte dans Réglages Système" : "Dans la barre"
+        }
     }
 
     var body: some View {
-        let placement = classifier.shownPlacement(of: item)
         HStack(spacing: Orbe.Densite.ecart) {
-            MenuBarItemIcon(item: item).frame(width: 18, height: 18)
+            Group {
+                if app.bundleID.contains("#") {
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(Orbe.texte2)
+                } else {
+                    MenuBarAppIcon(bundleID: bundleID)
+                }
+            }
+            .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: Orbe.Space.s1) {
-                Text(title).orbe(.texte)
-                Text(detail).orbe(.texteS, classifier.notes[key] == nil ? Orbe.texte2 : Orbe.alerte)
+                Text(app.name).orbe(.texte)
+                Text(detail).orbe(.texteS, visibility.notes[bundleID] == nil ? Orbe.texte2 : Orbe.alerte)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: Orbe.Space.s3)
-            if classifier.isNew(item) {
-                OrbeBadge(ton: .info, text: "Nouvelle")
-                Button("Garder ici") { classifier.keep(item) }.buttonStyle(OrbeButtonStyle(variante: .discret, compact: true))
-            }
-            if !classifier.isFixed(item) {
+            if reason == nil {
                 OrbeSwitch(isOn: Binding(
-                    get: { placement != .main },
-                    set: { classifier.set($0 ? .hidden : .main, for: item) }))
+                    get: { placement != nil },
+                    set: { visibility.set($0 ? .hidden : nil, for: bundleID) }))
                     .disabled(placement == .masked)
                     .frame(width: menuBarBoxWidth)
                 OrbeSwitch(isOn: Binding(
                     get: { placement == .masked },
-                    set: { classifier.set($0 ? .masked : .hidden, for: item) }))
+                    set: { visibility.set($0 ? .masked : .hidden, for: bundleID) }))
                     .frame(width: menuBarBoxWidth)
             }
         }
-        .disabled(!enabled || classifier.busy.contains(key))
+        .disabled(!enabled)
         .frame(minHeight: Orbe.Densite.ligne)
         .padding(.horizontal, Orbe.Densite.padPanneau)
         .padding(.vertical, Orbe.Space.s3)
-    }
-}
-
-/// The application's icon, or a symbol for a system icon that has none.
-struct MenuBarItemIcon: View {
-    let item: MenuBarItem
-
-    var body: some View {
-        if let symbol = item.systemSymbol {
-            Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(Orbe.texte)
-        } else if let icon = NSRunningApplication(processIdentifier: item.pid)?.icon {
-            Image(nsImage: icon).resizable().interpolation(.high)
-        } else {
-            Image(systemName: "app.dashed").foregroundStyle(Orbe.texte2)
-        }
-    }
-}
-
-extension MenuBarItem {
-    /// SF Symbol for an Apple icon whose process has no application icon. nil for a
-    /// third-party app. The first candidate that exists on this macOS is used.
-    var systemSymbol: String? {
-        guard isSystem || bundleID.hasPrefix("com.apple.") else { return nil }
-        let text = (layoutKeys.joined(separator: " ") + " " + axIdentifier + " " + bundleID).lowercased()
-        let table: [(String, [String])] = [
-            ("wifi", ["wifi"]),
-            ("battery", ["battery.100percent", "battery.100"]),
-            ("bluetooth", ["bluetooth", "dot.radiowaves.left.and.right"]),
-            ("clock", ["clock"]),
-            ("bentobox", ["switch.2"]), ("controlcenter", ["switch.2"]),
-            ("sound", ["speaker.wave.2.fill"]),
-            ("focus", ["moon.fill"]),
-            ("nowplaying", ["play.circle"]),
-            ("userswitcher", ["person.crop.circle"]),
-            ("audiovideo", ["mic.fill"]),
-            ("textinput", ["keyboard"]),
-            ("campo", ["magnifyingglass"]),
-            ("vpn", ["network"]),
-            ("ssmenuagent", ["rectangle.on.rectangle"]),
-        ]
-        for (needle, candidates) in table where text.contains(needle) {
-            if let found = candidates.first(where: { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil }) {
-                return found
-            }
-        }
-        return isSystem ? "square.grid.2x2" : nil
     }
 }

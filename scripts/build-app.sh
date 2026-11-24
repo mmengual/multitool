@@ -54,6 +54,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Framewor
 cp ".build/release/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 # Read-only privileged helper, registered by the app with SMAppService.daemon.
 cp ".build/release/MultitoolHelper" "$APP/Contents/MacOS/MultitoolHelper"
+# Menu Bar module: the tool that flips macOS's per-app menu bar switches.
+cp ".build/release/MultitoolVisibility" "$APP/Contents/MacOS/MultitoolVisibility"
 cat > "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -102,11 +104,23 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# Sign inside out: Sparkle's helpers, the privileged helper, then the app.
+# Sign inside out: Sparkle's helpers, the privileged helper, the visibility tool, then the app.
 # The helper checks that its client is com.mmengual.multitool signed by this team,
 # and the app checks the same of the helper (MultitoolShared/HelperProtocol.swift).
 codesign --force --deep --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign "$IDENTITY" --identifier "$HELPER_ID" "$APP/Contents/MacOS/MultitoolHelper"
+# MultitoolVisibility needs an entitlement macOS only accepts from a Developer ID
+# signature (an Apple Development one gets the process killed at launch). Without a
+# Developer ID identity on this Mac it is signed like the rest, and the Menu Bar
+# module says that hiding is unavailable.
+VISIBILITY_ID="${VISIBILITY_IDENTITY:-$(awk '/"Developer ID Application: / { print $2; exit }' <<<"$IDENTITIES")}"
+if [[ -n "$VISIBILITY_ID" ]]; then
+    codesign --force --sign "$VISIBILITY_ID" --options runtime --identifier "$BUNDLE_ID.visibility" \
+        --entitlements "$ROOT/Resources/MultitoolVisibility.entitlements" "$APP/Contents/MacOS/MultitoolVisibility"
+else
+    echo "note: no Developer ID identity on this Mac: the Menu Bar module can't hide icons in this build." >&2
+    codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.visibility" "$APP/Contents/MacOS/MultitoolVisibility"
+fi
 codesign --force --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP"
 

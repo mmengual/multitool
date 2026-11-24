@@ -10,7 +10,7 @@ risqué, et chaque section se complète au fur et à mesure.
 | 0 | Socle modules | fait | Prérequis : le popover d'origine (Settings / Stats / Info) ne tenait pas quatre outils de plus. |
 | 1 | Clipboard | fait (v1) | APIs publiques et stables, aucune nouvelle permission, périmètre clair. |
 | 2 | Processus & ressources | en cours | Diagnostic du poste et éléments de démarrage. Lecture seule d'abord, actions ensuite. Quelques données demandent des droits admin. |
-| 3 | Menu Bar | prototype fait | Pas d'API pour gérer les icônes des autres apps : le module pilote le débordement natif de macOS 27 par l'Accessibilité. À revérifier à chaque version de macOS. |
+| 3 | Menu Bar | en cours | Pas d'API publique pour gérer les icônes des autres apps : le module règle les interrupteurs par app de macOS 27, par un outil signé Developer ID. À revérifier à chaque version de macOS. |
 | 4 | Screenshot | à faire | Le plus gros chantier, et le plus personnel. Réutilise la sélection de zone et ScreenCaptureKit déjà présents. |
 
 ---
@@ -145,6 +145,12 @@ Questions ouvertes :
 - Faut-il garder un historique plus long sur disque, pour retrouver le pic d'hier ?
 
 ## 3. Menu Bar (icônes cachées affichées dans une bande sous la barre)
+
+> **Lot 6, 24 novembre 2026.** Le masquage par un chevron large (lots 2 à 4,
+> décrits plus bas) laissait un vide dans la barre. Il est remplacé par les
+> interrupteurs par app de macOS 27 : l'icône est retirée de la barre, qui se
+> resserre. Le brief et les mesures sont dans `docs/menubar-lot6-brief.md`. Les
+> sections qui suivent gardent l'historique des lots 1 à 4.
 
 **Besoin** : choisir, icône par icône, ce qui reste dans la barre des menus, ce
 qui passe dans une barre cachée et ce qui disparaît, sans jamais glisser une
