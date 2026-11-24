@@ -3,6 +3,15 @@
   <channel>
     <title>Multitool</title>
     <item>
+      <title>Multitool 0.5.0</title>
+      <pubDate>Tue, 24 Nov 2026 08:39:00 GMT</pubDate>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul><li>Barre des menus : les icônes cachées ne laissent plus de vide. Multitool passe par les interrupteurs par app de macOS 27, et le chevron devient un simple bouton.</li><li>« Barre cachée » retire l&#x27;icône de la barre et la range dans la bande. Un clic dans la bande la fait revenir le temps de s&#x27;en servir, puis elle repart.</li><li>« Masquée » la retire aussi de la bande. Le réglage vaut pour toutes les icônes d&#x27;une même app.</li><li>Vos choix de la 0.4 sont repris, un par app. Les icônes système cachées en 0.4 redeviennent visibles : macOS ne permet pas de les éteindre ainsi.</li><li>Plus besoin de l&#x27;accès complet au disque, sauf pour le bouton qui remet l&#x27;ordre d&#x27;origine de la 0.4.</li></ul>]]></description>
+      <enclosure url="https://api.github.com/repos/mmengual/multitool/releases/assets/786362914" type="application/octet-stream" sparkle:edSignature="HhFdxtCIvXihYy6TCCROompDSpjcZ9RpleYyEN5FxdK9jgjOFiXPxWNkGKmzmbeZK15Cdzv0zO8bVxuI9WZMCQ==" length="2860740"/>
+    </item>
+    <item>
       <title>Multitool 0.4.1</title>
       <pubDate>Mon, 23 Nov 2026 21:50:41 GMT</pubDate>
       <sparkle:version>19</sparkle:version>
